@@ -19,7 +19,16 @@ type HistoryItem struct {
 }
 
 func NewHistoryItemFromResponse(line string) (*HistoryItem, error) {
+	// id,time,url,filename,views, where the filename itself may contain commas
 	parts := strings.Split(line, ",")
+	if len(parts) < 5 {
+		return nil, errors.New("expected 5 fields")
+	}
+	if len(parts) > 5 {
+		filename := strings.Join(parts[3:len(parts)-1], ",")
+		parts = []string{parts[0], parts[1], parts[2], filename, parts[len(parts)-1]}
+	}
+
 	uploadId, err := strconv.Atoi(parts[0])
 	if err != nil {
 		return nil, errors.New("expected upload ID")

@@ -15,12 +15,15 @@ const (
 	wmPaint       = 0x000F
 	wmEraseBkgnd  = 0x0014
 	wmKeyDown     = 0x0100
+	wmKeyUp       = 0x0101
 	wmMouseMove   = 0x0200
 	wmLButtonDown = 0x0201
 	wmLButtonUp   = 0x0202
 	wmRButtonUp   = 0x0205
 
 	vkEscape = 0x1B
+	vkShift  = 0x10
+	vkSpace  = 0x20
 
 	// Window styles
 	wsPopup        = 0x80000000
@@ -33,8 +36,12 @@ const (
 	idcCross = 32515
 
 	// GDI
-	psSolid     = 0
-	hollowBrush = 5
+	psSolid      = 0
+	psDot        = 2
+	hollowBrush  = 5
+	transparent  = 1
+	colorOnColor = 3
+	logPixelsY   = 90
 
 	// System metrics
 	smXVirtualScreen  = 76
@@ -170,6 +177,19 @@ var (
 	procDeleteObject           = modGdi32.NewProc("DeleteObject")
 	procBitBlt                 = modGdi32.NewProc("BitBlt")
 	procGetDIBits              = modGdi32.NewProc("GetDIBits")
+	procCreateDIBSection       = modGdi32.NewProc("CreateDIBSection")
+	procStretchBlt             = modGdi32.NewProc("StretchBlt")
+	procSetStretchBltMode      = modGdi32.NewProc("SetStretchBltMode")
+	procCreateFontW            = modGdi32.NewProc("CreateFontW")
+	procTextOutW               = modGdi32.NewProc("TextOutW")
+	procSetTextColor           = modGdi32.NewProc("SetTextColor")
+	procSetBkMode              = modGdi32.NewProc("SetBkMode")
+	procGetTextExtentPoint32W  = modGdi32.NewProc("GetTextExtentPoint32W")
+	procGetDeviceCaps          = modGdi32.NewProc("GetDeviceCaps")
+	procMoveToEx               = modGdi32.NewProc("MoveToEx")
+	procLineTo                 = modGdi32.NewProc("LineTo")
+
+	procGetKeyState = modUser32.NewProc("GetKeyState")
 )
 
 func syscallErr(name string, err error) error {
@@ -376,6 +396,94 @@ func postQuitMessage(code int32) {
 func defWindowProc(hwnd uintptr, message uint32, wParam uintptr, lParam uintptr) uintptr {
 	r1, _, _ := procDefWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
 	return r1
+}
+
+// createDIBSection makes a 32-bit top-down bitmap whose pixels (BGRA) can be
+// written directly through the returned slice.
+func createDIBSection(hdc uintptr, width, height int) (uintptr, []byte, error) {
+	var bmi bitmapInfo
+	bmi.BmiHeader.BiSize = uint32(unsafe.Sizeof(bmi.BmiHeader))
+	bmi.BmiHeader.BiWidth = int32(width)
+	bmi.BmiHeader.BiHeight = -int32(height)
+	bmi.BmiHeader.BiPlanes = 1
+	bmi.BmiHeader.BiBitCount = 32
+	bmi.BmiHeader.BiCompression = biRGB
+
+	var bits unsafe.Pointer
+	r1, _, e1 := procCreateDIBSection.Call(
+		hdc,
+		uintptr(unsafe.Pointer(&bmi)),
+		dibRGBColors,
+		uintptr(unsafe.Pointer(&bits)),
+		0,
+		0,
+	)
+	if r1 == 0 || bits == nil {
+		return 0, nil, syscallErr("CreateDIBSection", e1)
+	}
+	return r1, unsafe.Slice((*byte)(bits), width*height*4), nil
+}
+
+func stretchBlt(dst uintptr, x, y, width, height int, src uintptr, srcX, srcY, srcWidth, srcHeight int) {
+	procStretchBlt.Call(
+		dst, uintptr(x), uintptr(y), uintptr(width), uintptr(height),
+		src, uintptr(srcX), uintptr(srcY), uintptr(srcWidth), uintptr(srcHeight),
+		srccopy,
+	)
+}
+
+func createFont(height int, weight int, face string) uintptr {
+	name, _ := windows.UTF16PtrFromString(face)
+	r1, _, _ := procCreateFontW.Call(
+		uintptr(int32(-height)), 0, 0, 0, uintptr(weight),
+		0, 0, 0,
+		1, // DEFAULT_CHARSET
+		0, 0,
+		5, // CLEARTYPE_QUALITY
+		0,
+		uintptr(unsafe.Pointer(name)),
+	)
+	return r1
+}
+
+func textExtent(hdc uintptr, text string) (int, int) {
+	chars, _ := windows.UTF16FromString(text)
+	var size struct{ Cx, Cy int32 }
+	procGetTextExtentPoint32W.Call(hdc, uintptr(unsafe.Pointer(&chars[0])), uintptr(len(chars)-1), uintptr(unsafe.Pointer(&size)))
+	return int(size.Cx), int(size.Cy)
+}
+
+func textOut(hdc uintptr, x, y int, text string) {
+	chars, _ := windows.UTF16FromString(text)
+	procTextOutW.Call(hdc, uintptr(int32(x)), uintptr(int32(y)), uintptr(unsafe.Pointer(&chars[0])), uintptr(len(chars)-1))
+}
+
+func setTextColor(hdc uintptr, color uint32) {
+	procSetTextColor.Call(hdc, uintptr(color))
+}
+
+func setBkMode(hdc uintptr, mode int) {
+	procSetBkMode.Call(hdc, uintptr(mode))
+}
+
+func setStretchBltMode(hdc uintptr, mode int) {
+	procSetStretchBltMode.Call(hdc, uintptr(mode))
+}
+
+func getDeviceCaps(hdc uintptr, index int) int {
+	r1, _, _ := procGetDeviceCaps.Call(hdc, uintptr(index))
+	return int(r1)
+}
+
+func drawLine(hdc uintptr, x1, y1, x2, y2 int) {
+	procMoveToEx.Call(hdc, uintptr(int32(x1)), uintptr(int32(y1)), 0)
+	procLineTo.Call(hdc, uintptr(int32(x2)), uintptr(int32(y2)))
+}
+
+// keyDown reports whether a key is held right now
+func keyDown(virtualKey int) bool {
+	r1, _, _ := procGetKeyState.Call(uintptr(virtualKey))
+	return int16(r1) < 0
 }
 
 func colorRef(r, g, b byte) uint32 {

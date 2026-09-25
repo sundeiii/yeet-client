@@ -31,6 +31,8 @@ func (m *HotkeyManager) Start() {
 	m.register(m.config.Hotkeys.CurrentWindowScreenshot, m.tray.UploadWindowScreenshot)
 	m.register(m.config.Hotkeys.UploadFile, m.tray.UploadFileFromDialog)
 	m.register(m.config.Hotkeys.UploadClipboard, m.tray.UploadFromClipboard)
+	m.register(m.config.Hotkeys.RepeatArea, m.tray.UploadLastAreaScreenshot)
+	m.register(m.config.Hotkeys.DelayedArea, m.tray.DelayedAreaScreenshot)
 	// The toggle has to keep working while puushing is disabled, otherwise
 	// it could turn the shortcuts off but never back on
 	m.registerAlwaysActive(m.config.Hotkeys.Toggle, m.tray.TogglePuushing)

@@ -1,11 +1,13 @@
 package tray
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"net/url"
 	"sync"
+	"sync/atomic"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
@@ -27,13 +29,25 @@ type TrayManager struct {
 	menu             *fyne.Menu
 	targetApp        fyne.App
 	settingsCallback func()
+	openCallback     func()
 
 	watcher *fsnotify.Watcher
 
-	uploadQueue         chan []string
+	uploadQueue         chan uploadBatch
 	uploadQueueStop     chan struct{}
 	uploadQueueStart    sync.Once
 	uploadQueueStopOnce sync.Once
+
+	// Guards the fields below, which upload goroutines change
+	mu           sync.Mutex
+	activeUpload *uploadJob
+	cancelUpload context.CancelFunc
+	failed       []*uploadJob
+	pools        []*puush.Pool
+	listeners    []func()
+
+	pendingDir   string
+	countingDown atomic.Bool
 }
 
 func NewTrayManager(cfg *config.Config, api *puush.Client) *TrayManager {
@@ -42,8 +56,9 @@ func NewTrayManager(cfg *config.Config, api *puush.Client) *TrayManager {
 		api:             api,
 		config:          cfg,
 		screenshots:     provider,
-		uploadQueue:     make(chan []string, 255),
+		uploadQueue:     make(chan uploadBatch, 255),
 		uploadQueueStop: make(chan struct{}),
+		pendingDir:      config.PendingDir(),
 	}
 }
 
@@ -51,6 +66,53 @@ func NewTrayManager(cfg *config.Config, api *puush.Client) *TrayManager {
 // once the "Settings..." action has been invoked
 func (m *TrayManager) SetSettingsCallback(callback func()) {
 	m.settingsCallback = callback
+}
+
+// SetOpenCallback sets the function that opens the app's window, for "Open puush".
+func (m *TrayManager) SetOpenCallback(callback func()) {
+	m.openCallback = callback
+}
+
+// OnChange registers a function that's called (on the main thread) when
+// uploads, failed uploads or pools change, so windows can update.
+func (m *TrayManager) OnChange(listener func()) {
+	m.mu.Lock()
+	m.listeners = append(m.listeners, listener)
+	m.mu.Unlock()
+}
+
+func (m *TrayManager) notifyListeners() {
+	m.mu.Lock()
+	listeners := append([]func(){}, m.listeners...)
+	m.mu.Unlock()
+	for _, listener := range listeners {
+		listener()
+	}
+}
+
+// ResetAccountState forgets the logged out account's uploads and pools.
+func (m *TrayManager) ResetAccountState() {
+	m.mu.Lock()
+	m.pools = nil
+	m.mu.Unlock()
+	fyne.Do(func() {
+		m.uploadHistory = nil
+		m.rebuildMenuItems()
+		m.notifyListeners()
+	})
+}
+
+// RebuildMenu updates the tray menu after a setting it shows has changed.
+func (m *TrayManager) RebuildMenu() {
+	m.stateChanged()
+}
+
+// stateChanged rebuilds the menu and tells the listeners, from any goroutine.
+func (m *TrayManager) stateChanged() {
+	fyne.Do(func() {
+		m.rebuildMenuItems()
+		m.notifyListeners()
+	})
 }
 
 // GetScreenshotProvider returns the screenshot provider used by the tray manager
@@ -99,7 +161,7 @@ func (m *TrayManager) ShowErrorNotification(message string) {
 func (m *TrayManager) TogglePuushing() {
 	m.config.General.DisabledToggle = !m.config.General.DisabledToggle
 	// The hotkey calls this from its own goroutine; menus must change on the main thread
-	fyne.Do(m.rebuildMenuItems)
+	m.stateChanged()
 
 	if m.config.General.DisabledToggle {
 		m.ShowNotification("puush was disabled!", "Shortcut keys will no longer be accepted.")
@@ -138,6 +200,7 @@ func (m *TrayManager) Apply(app fyne.App) error {
 
 // Initialize populates the system tray menu.
 func (m *TrayManager) Initialize(applicationName string) error {
+	m.loadFailed()
 	m.menu = fyne.NewMenu(applicationName)
 	m.rebuildMenuItems()
 
@@ -167,6 +230,12 @@ func (m *TrayManager) rebuildMenuItems() {
 	puushVersion := fyne.NewMenuItem(m.buildString(), func() {})
 	puushVersion.Disabled = true
 
+	openApp := fyne.NewMenuItem("Open puush", func() {
+		if m.openCallback != nil {
+			m.openCallback()
+		}
+	})
+
 	accountSettings := fyne.NewMenuItem("My Account", func() {
 		if !m.api.Account.Credentials.HasApiKey() {
 			return
@@ -183,9 +252,17 @@ func (m *TrayManager) rebuildMenuItems() {
 
 	items := []*fyne.MenuItem{
 		puushVersion,
+		openApp,
 		accountSettings,
-		fyne.NewMenuItemSeparator(),
 	}
+
+	if name, uploading := m.ActiveUpload(); uploading {
+		items = append(items, fyne.NewMenuItem("Cancel Upload ("+escapeMenuLabel(name)+")", m.CancelUpload))
+	}
+	if failed := m.buildFailedMenu(); failed != nil {
+		items = append(items, failed)
+	}
+	items = append(items, fyne.NewMenuItemSeparator())
 
 	// Append the upload history menu items
 	items = append(items, m.BuildHistoryMenu()...)
@@ -203,9 +280,25 @@ func (m *TrayManager) rebuildMenuItems() {
 		go m.UploadAreaScreenshot()
 	})
 	captureArea.Icon = selectionIcon
+	captureLastArea := fyne.NewMenuItem("Capture Last Area Again", func() {
+		go m.UploadLastAreaScreenshot()
+	})
+	captureLastArea.Icon = selectionIcon
+	captureLastArea.Disabled = !m.HasLastArea()
+
+	seconds := int(m.config.Capture.Delay().Seconds())
+	delayed := fyne.NewMenuItem(fmt.Sprintf("Capture in %d Seconds", seconds), nil)
+	delayed.ChildMenu = fyne.NewMenu("",
+		fyne.NewMenuItem("Area", func() { go m.DelayedAreaScreenshot() }),
+		fyne.NewMenuItem("Desktop", func() { go m.DelayedDesktopScreenshot() }),
+		fyne.NewMenuItem("Current Window", func() { go m.DelayedWindowScreenshot() }),
+	)
+
 	uploadFile := fyne.NewMenuItem("Upload File", m.UploadFileFromDialog)
 	uploadFile.Icon = uploadIcon
-	uploadClipboard := fyne.NewMenuItem("Upload Clipboard", m.UploadFromClipboard)
+	uploadClipboard := fyne.NewMenuItem("Upload Clipboard", func() {
+		go m.UploadFromClipboard()
+	})
 	uploadClipboard.Icon = clipboardIcon
 
 	disablePuushing := fyne.NewMenuItem("Disable puushing", m.TogglePuushing)
@@ -221,12 +314,16 @@ func (m *TrayManager) rebuildMenuItems() {
 		captureWindow,
 		captureDesktop,
 		captureArea,
+		captureLastArea,
+		delayed,
 		uploadClipboard,
 		uploadFile,
 		fyne.NewMenuItemSeparator(),
-		disablePuushing,
-		settings,
 	)
+	if pools := m.buildPoolMenu(); pools != nil {
+		items = append(items, pools)
+	}
+	items = append(items, disablePuushing, settings)
 	m.menu.Items = items
 
 	if m.targetApp == nil {
@@ -239,4 +336,34 @@ func (m *TrayManager) rebuildMenuItems() {
 	if desktopApp, ok := m.targetApp.(desktop.App); ok {
 		desktopApp.SetSystemTrayMenu(m.menu)
 	}
+}
+
+// buildFailedMenu lists the uploads that are waiting to be retried.
+func (m *TrayManager) buildFailedMenu() *fyne.MenuItem {
+	names := m.FailedUploads()
+	if len(names) == 0 {
+		return nil
+	}
+
+	var items []*fyne.MenuItem
+	for i, name := range names {
+		if i == 10 {
+			more := fyne.NewMenuItem(fmt.Sprintf("and %d more", len(names)-10), func() {})
+			more.Disabled = true
+			items = append(items, more)
+			break
+		}
+		item := fyne.NewMenuItem(escapeMenuLabel(name), func() {})
+		item.Disabled = true
+		items = append(items, item)
+	}
+	items = append(items,
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("Retry All", func() { go m.RetryFailedUploads() }),
+		fyne.NewMenuItem("Discard All", func() { go m.DiscardFailedUploads() }),
+	)
+
+	menu := fyne.NewMenuItem(fmt.Sprintf("Failed Uploads (%d)", len(names)), nil)
+	menu.ChildMenu = fyne.NewMenu("", items...)
+	return menu
 }

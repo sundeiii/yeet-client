@@ -1,6 +1,8 @@
 package desktop
 
 import (
+	"fmt"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -46,11 +48,25 @@ func (ui *UI) buildGeneralTab() fyne.CanvasObject {
 	onSuccessRight := container.NewVBox(saveClipboardCheckbox, saveLocalCheckbox, saveLocalPathContainer)
 
 	onSuccessGrid := container.NewGridWithColumns(2, onSuccessLeft, onSuccessRight)
-	return container.NewVBox(
+
+	// Countdown for "Capture in N Seconds"
+	delayOptions := []string{"3 seconds", "5 seconds", "10 seconds"}
+	delaySelect := widget.NewSelect(delayOptions, func(s string) {
+		var seconds int
+		fmt.Sscanf(s, "%d", &seconds)
+		ui.config.Capture.DelaySeconds = seconds
+		ui.tray.RebuildMenu()
+	})
+	delaySelect.SetSelected(fmt.Sprintf("%d seconds", int(ui.config.Capture.Delay().Seconds())))
+	delayRow := container.NewHBox(widget.NewLabel("Delayed captures wait"), delaySelect)
+
+	return container.NewVScroll(container.NewVBox(
 		widget.NewSeparator(),
 		createGroup("General Settings", startupCheckbox),
 		widget.NewSeparator(),
 		createGroup("On successful puush", onSuccessGrid),
 		widget.NewSeparator(),
-	)
+		createGroup("Capturing", delayRow),
+		widget.NewSeparator(),
+	))
 }

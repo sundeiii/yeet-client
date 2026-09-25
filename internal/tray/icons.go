@@ -1,7 +1,6 @@
 package tray
 
 import (
-	"fmt"
 	"math"
 	"time"
 
@@ -76,9 +75,9 @@ func (m *TrayManager) OnTrayProgressFail() {
 	})
 }
 
-// OnTrayProgressUpdate gets called once the upload percentage
-// has been updated through `puush.ProgressReader`
-func (m *TrayManager) OnTrayProgressUpdate(percentage float64) {
+// OnTrayProgressUpdate fills the tray icon to the given percentage, with the
+// tooltip explaining what's going on
+func (m *TrayManager) OnTrayProgressUpdate(percentage float64, tooltip string) {
 	fyne.Do(func() {
 		if desktopApp, ok := m.targetApp.(desktop.App); ok {
 			switch roundedPercentage(percentage) {
@@ -105,7 +104,7 @@ func (m *TrayManager) OnTrayProgressUpdate(percentage float64) {
 			default:
 				desktopApp.SetSystemTrayIcon(puushTrayProgress0Icon)
 			}
-			setTrayTooltip(fmt.Sprintf("puush: Uploading (%.2f%%)", percentage))
+			setTrayTooltip(tooltip)
 		}
 	})
 }

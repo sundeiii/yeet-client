@@ -9,11 +9,11 @@ import (
 	"image"
 	"image/png"
 	"io"
-	"time"
 )
 
 type WindowsScreenshotProvider struct {
-	quality Quality
+	quality  Quality
+	lastArea image.Rectangle
 }
 
 func NewWindowsScreenshotProvider() (ScreenshotProvider, error) {
@@ -63,23 +63,34 @@ func (p *WindowsScreenshotProvider) CaptureScreen() (io.ReadSeekCloser, error) {
 }
 
 func (p *WindowsScreenshotProvider) CaptureArea() (io.ReadSeekCloser, error) {
-	r, err := selectAreaRect()
+	selection, err := selectArea()
 	if err != nil {
 		return nil, fmt.Errorf("select area: %w", err)
 	}
+	p.lastArea = selection.area
 
-	top := int(r.Top)
-	left := int(r.Left)
-	width := int(r.Right - r.Left)
-	height := int(r.Bottom - r.Top)
-
-	// Give the selector window a moment to disappear before capturing
-	time.Sleep(50 * time.Millisecond)
-
-	img, err := captureScreenRect(left, top, width, height)
+	// The selector froze the screen, so the picture is what was on it then
+	reader, err := newPngReader(selection.Image())
 	if err != nil {
-		return nil, fmt.Errorf("capture area: %w", err)
+		return nil, err
 	}
+	return ApplyQuality(reader, p.quality)
+}
+
+func (p *WindowsScreenshotProvider) LastArea() (image.Rectangle, bool) {
+	return p.lastArea, !p.lastArea.Empty()
+}
+
+func (p *WindowsScreenshotProvider) CaptureRegion(area image.Rectangle) (io.ReadSeekCloser, error) {
+	if area.Empty() {
+		return nil, errors.New("capture region: the area is empty")
+	}
+
+	img, err := captureScreenRect(area.Min.X, area.Min.Y, area.Dx(), area.Dy())
+	if err != nil {
+		return nil, fmt.Errorf("capture region: %w", err)
+	}
+	p.lastArea = area
 
 	reader, err := newPngReader(img)
 	if err != nil {

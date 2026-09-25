@@ -1,9 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestJsonStore(t *testing.T) {
@@ -43,5 +45,42 @@ func TestJsonStore(t *testing.T) {
 	}
 	if updatedCfg.Capture.UploadQuality != 2 {
 		t.Errorf("expected UploadQuality to be 2, got %d", updatedCfg.Capture.UploadQuality)
+	}
+}
+
+func TestRememberLocalCopy(t *testing.T) {
+	capture := &CaptureConfig{}
+	capture.RememberLocalCopy("", "C:/a.png")
+	capture.RememberLocalCopy("https://x/a", "")
+	if len(capture.LocalCopies) != 0 {
+		t.Fatal("empty links or paths shouldn't be remembered")
+	}
+
+	for i := range maxLocalCopies + 10 {
+		capture.RememberLocalCopy(fmt.Sprintf("https://x/%d", i), fmt.Sprintf("C:/%d.png", i))
+	}
+	if len(capture.LocalCopies) != maxLocalCopies {
+		t.Errorf("expected %d remembered copies, got %d", maxLocalCopies, len(capture.LocalCopies))
+	}
+	last := fmt.Sprintf("https://x/%d", maxLocalCopies+9)
+	if capture.LocalCopies[last] != fmt.Sprintf("C:/%d.png", maxLocalCopies+9) {
+		t.Error("the newest copy must always be kept")
+	}
+}
+
+func TestOldConfigsGetNewDefaults(t *testing.T) {
+	store := &JsonStore{Path: filepath.Join(t.TempDir(), "config.json")}
+	// A config written by an older version, without the newer settings
+	os.WriteFile(store.Path, []byte(`{"Hotkeys": {"ScreenSelection": "Ctrl+Shift+9"}, "Capture": {"SaveImages": false}}`), 0644)
+
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Hotkeys.ScreenSelection != "Ctrl+Shift+9" || cfg.Capture.SaveImages {
+		t.Error("saved settings must be kept")
+	}
+	if cfg.Hotkeys.RepeatArea == "" || cfg.Capture.Delay() != 3*time.Second {
+		t.Errorf("new settings should get their defaults, got %q and %v", cfg.Hotkeys.RepeatArea, cfg.Capture.Delay())
 	}
 }

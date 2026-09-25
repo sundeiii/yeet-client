@@ -1,6 +1,7 @@
 package puush
 
 import (
+	"context"
 	"errors"
 	"io"
 	"mime/multipart"
@@ -9,9 +10,22 @@ import (
 	"strings"
 )
 
+// UploadOptions are the optional settings for an upload.
+type UploadOptions struct {
+	// PoolId is the pool to upload into; 0 uses the account's default pool.
+	// Servers that don't know about pools ignore it.
+	PoolId int
+}
+
 // Upload sends a file to puush and returns the URL of the uploaded file.
 // It will also update the disk usage of the account based on the response from the server.
 func (c *Client) Upload(file io.Reader, filename string) (string, error) {
+	return c.UploadWithOptions(context.Background(), file, filename, UploadOptions{})
+}
+
+// UploadWithOptions is Upload with a pool choice, and a context that can
+// cancel the upload while it's running.
+func (c *Client) UploadWithOptions(ctx context.Context, file io.Reader, filename string, options UploadOptions) (string, error) {
 	if !c.Account.Credentials.HasApiKey() {
 		return "", PuushErrorInvalidCredentials
 	}
@@ -45,10 +59,17 @@ func (c *Client) Upload(file io.Reader, filename string) (string, error) {
 			return
 		}
 
+		if options.PoolId > 0 {
+			err = writer.WriteField("p", strconv.Itoa(options.PoolId))
+			if err != nil {
+				return
+			}
+		}
+
 		err = writer.Close()
 	}()
 
-	request, err := http.NewRequest("POST", c.FormatURL("/api/up"), pr)
+	request, err := http.NewRequestWithContext(ctx, "POST", c.FormatURL("/api/up"), pr)
 	if err != nil {
 		return "", err
 	}
@@ -57,7 +78,13 @@ func (c *Client) Upload(file io.Reader, filename string) (string, error) {
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return "", err
+		// Stop the goroutine that's still feeding the request
+		pr.CloseWithError(err)
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		// The server couldn't be reached; worth trying again later
+		return "", PuushErrorRequestFailure
 	}
 	defer response.Body.Close()
 

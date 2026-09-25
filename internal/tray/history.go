@@ -3,13 +3,35 @@ package tray
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 	"github.com/sundeiii/yeet-client/pkg/puush"
 )
+
+// How often the history is checked, so uploads made elsewhere (e.g. on the
+// website) show up in the menu too
+const historyRefreshInterval = 30 * time.Second
+
+// StartHistoryRefresh keeps the recent uploads (and pools) up to date.
+func (m *TrayManager) StartHistoryRefresh() {
+	go func() {
+		ticker := time.NewTicker(historyRefreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				m.RefreshHistory()
+			case <-m.uploadQueueStop:
+				return
+			}
+		}
+	}()
+}
 
 // RefreshHistory will update the tray's upload history
 func (m *TrayManager) RefreshHistory() {
@@ -29,6 +51,7 @@ func (m *TrayManager) RefreshHistory() {
 		}
 		m.uploadHistory = history
 		m.rebuildMenuItems()
+		m.notifyListeners()
 	})
 }
 
@@ -75,27 +98,63 @@ func (m *TrayManager) BuildHistoryMenuItem(historyItem *puush.HistoryItem) *fyne
 	})
 
 	deleteItem := fyne.NewMenuItem("Delete", func() {
-		if newHistory, err := m.api.Delete(historyItem.Id); err == nil {
-			m.uploadHistory = newHistory
-			m.rebuildMenuItems()
-		}
+		go func() {
+			newHistory, err := m.api.Delete(historyItem.Id)
+			if err != nil {
+				m.ShowErrorNotification(puush.FormatError(err))
+				return
+			}
+			fyne.Do(func() {
+				m.uploadHistory = newHistory
+				m.rebuildMenuItems()
+				m.notifyListeners()
+			})
+		}()
 	})
 
-	historyMenu := fyne.NewMenu(historyItem.FileName,
-		timeItem,
-		viewsItem,
-		fyne.NewMenuItemSeparator(),
-		openItem,
-		copyItem,
-		fyne.NewMenuItemSeparator(),
-		deleteItem,
-	)
+	items := []*fyne.MenuItem{timeItem, viewsItem, fyne.NewMenuItemSeparator(), openItem, copyItem}
 
-	fileName := strings.ReplaceAll(historyItem.FileName, "_", "__")
-	historyMenuItem := fyne.NewMenuItem(fileName, nil)
-	historyMenuItem.ChildMenu = historyMenu
+	// Screenshots saved locally, and files uploaded from disk
+	if localCopy := m.config.Capture.LocalCopies[historyItem.Url]; localCopy != "" {
+		if _, err := os.Stat(localCopy); err == nil {
+			items = append(items, fyne.NewMenuItem("Show in Folder", func() {
+				if err := ShowInFolder(localCopy); err != nil {
+					m.ShowErrorNotification("Could not open the folder.")
+				}
+			}))
+		}
+	}
+	items = append(items, fyne.NewMenuItemSeparator(), deleteItem)
+
+	historyMenuItem := fyne.NewMenuItem(historyLabel(historyItem, time.Now()), nil)
+	historyMenuItem.ChildMenu = fyne.NewMenu(historyItem.FileName, items...)
 	historyMenuItem.Icon = historyFileIcon(historyItem.FileName)
 	return historyMenuItem
+}
+
+// historyLabel is the name of an upload in the menu, with when it was
+// uploaded: the time for today's uploads, otherwise the date.
+func historyLabel(item *puush.HistoryItem, now time.Time) string {
+	name := item.FileName
+	if runes := []rune(name); len(runes) > 40 {
+		name = string(runes[:25]) + "…" + string(runes[len(runes)-12:])
+	}
+
+	when := item.Time.Format("Jan 2")
+	if y, m, d := item.Time.Date(); y == now.Year() && m == now.Month() && d == now.Day() {
+		when = item.Time.Format("15:04")
+	}
+	return escapeMenuLabel(name) + "   ·   " + when
+}
+
+// escapeMenuLabel keeps underscores from turning into keyboard shortcuts
+func escapeMenuLabel(label string) string {
+	return strings.ReplaceAll(label, "_", "__")
+}
+
+// FileIcon is an icon for the type of a file, by its name.
+func FileIcon(filename string) fyne.Resource {
+	return historyFileIcon(filename)
 }
 
 func historyFileIcon(filename string) fyne.Resource {

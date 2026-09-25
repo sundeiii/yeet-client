@@ -138,8 +138,7 @@ func (ui *UI) buildAccountDetails(updateView func()) fyne.CanvasObject {
 		go OpenBrowser(ui.api.AccountLink())
 	})
 	logoutButton := NewBorderedButton("Logout", func() {
-		ui.config.Account.Reset()
-		ui.api.Account.Reset()
+		ui.Logout()
 		updateView()
 	})
 	buttons := container.NewGridWithColumns(

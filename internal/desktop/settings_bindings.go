@@ -49,6 +49,12 @@ func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
 	togglePuushButton := createHotkeyButton(ui.config.Hotkeys.Toggle, func(s string) {
 		ui.config.Hotkeys.Toggle = s
 	})
+	repeatAreaButton := createHotkeyButton(ui.config.Hotkeys.RepeatArea, func(s string) {
+		ui.config.Hotkeys.RepeatArea = s
+	})
+	delayedAreaButton := createHotkeyButton(ui.config.Hotkeys.DelayedArea, func(s string) {
+		ui.config.Hotkeys.DelayedArea = s
+	})
 
 	rowFullscreen := container.NewGridWithColumns(2, widget.NewLabel("Capture full screen:"), fullScreenButton)
 	rowWindow := container.NewGridWithColumns(2, widget.NewLabel("Capture current window:"), currentWindowButton)
@@ -56,19 +62,26 @@ func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
 	rowFile := container.NewGridWithColumns(2, widget.NewLabel("Upload File:"), uploadFileButton)
 	rowClipboard := container.NewGridWithColumns(2, widget.NewLabel("Upload Clipboard:"), uploadClipboardButton)
 	rowToggle := container.NewGridWithColumns(2, widget.NewLabel("Toggle puush functionality:"), togglePuushButton)
+	rowRepeatArea := container.NewGridWithColumns(2, widget.NewLabel("Capture last area again:"), repeatAreaButton)
+	rowDelayedArea := container.NewGridWithColumns(2, widget.NewLabel("Capture area after a delay:"), delayedAreaButton)
 
 	content := container.NewVBox(
 		rowFullscreen,
 		rowWindow,
 		rowArea,
+		rowRepeatArea,
+		rowDelayedArea,
 		rowFile,
 		rowClipboard,
 		rowToggle,
 	)
 
-	return container.NewVBox(
+	hint := widget.NewLabel("Click a shortcut, then press the new keys. Escape keeps the old one.")
+	hint.Wrapping = fyne.TextWrapWord
+
+	return container.NewVScroll(container.NewVBox(
 		widget.NewSeparator(),
 		createGroup("Keyboard Bindings", content),
-		widget.NewSeparator(),
-	)
+		container.NewPadded(hint),
+	))
 }

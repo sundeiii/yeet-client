@@ -1,95 +1,238 @@
 package tray
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/url"
+	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"github.com/sundeiii/yeet-client/pkg/puush"
 )
 
-func (m *TrayManager) PerformUpload(reader io.Reader, filename string, preserveClipboard bool) {
+// uploadJob is one file to upload. Files from disk keep their path;
+// screenshots and clipboard contents are held in memory, so a failed upload
+// can be tried again without asking for the file again.
+type uploadJob struct {
+	Name string
+	Path string
+	Data []byte
+
+	// LocalCopy is the file on this computer the upload came from, if any,
+	// for "Show in Folder" in the recent uploads menu
+	LocalCopy string
+
+	// Pending is this job's copy in the pending folder after a failed upload
+	Pending string
+
+	// PreserveClipboard: the screenshot itself was put on the clipboard, so
+	// the link shouldn't replace it
+	PreserveClipboard bool
+
+	Attempts int
+}
+
+func newFileJob(path string) *uploadJob {
+	return &uploadJob{Name: filepath.Base(path), Path: path, LocalCopy: path}
+}
+
+func (job *uploadJob) open() (io.ReadCloser, int64, error) {
+	if job.Data != nil {
+		return io.NopCloser(bytes.NewReader(job.Data)), int64(len(job.Data)), nil
+	}
+	file, err := os.Open(job.Path)
+	if err != nil {
+		return nil, 0, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, 0, err
+	}
+	return file, info.Size(), nil
+}
+
+// Automatic retries for connection problems, before the upload is kept for
+// retrying by hand
+var retryDelays = []time.Duration{5 * time.Second, 20 * time.Second}
+
+// runUpload uploads one job, showing its progress in the tray. The upload
+// can be cancelled from the tray menu while it runs.
+func (m *TrayManager) runUpload(job *uploadJob) (string, error) {
 	if !m.api.Account.Credentials.HasApiKey() {
-		return
+		return "", puush.PuushErrorInvalidCredentials
 	}
-	log.Println("Starting upload:", filename)
 
-	urlResponse, err := m.api.Upload(reader, filename)
+	reader, size, err := job.open()
 	if err != nil {
-		m.OnUploadError(err)
-		return
-	}
-	m.OnUploadComplete(urlResponse, preserveClipboard)
-	// TODO: Implement upload retries
-}
-
-func (m *TrayManager) PerformFileUpload(path string) {
-	pr, err := puush.NewProgressReaderFromFile(path, m.OnTrayProgressUpdate)
-	if err != nil {
-		m.OnUploadError(err)
-		return
-	}
-	defer pr.Close()
-
-	filename := filepath.Base(path)
-	m.PerformUpload(pr, filename, false)
-}
-
-func (m *TrayManager) PerformScreenshotUpload(reader io.ReadSeekCloser, filename string) {
-	// Preserve the clipboard if the raw image was already saved to it
-	preserveClipboard := m.config.Capture.SaveImagesToClipboard
-
-	// For screenshots we only have a reader available by default
-	// We want to try our best to still show a progress bar for the upload
-
-	total, err := seekableReaderSize(reader)
-	if err == nil {
-		// If we can determine the size of the reader, we can
-		// show the progress bar during the upload
-		pr := puush.NewProgressReader(reader, total, m.OnTrayProgressUpdate)
-		defer pr.Close()
-		m.PerformUpload(pr, filename, preserveClipboard)
-		return
-	}
-
-	// If we can't determine the size of the reader, we can still perform
-	// the upload, but we won't be able to show the progress bar
-	log.Printf("Unable to determine upload size for %s: %v", filename, err)
-
-	if seekErr := seekToStart(reader); seekErr != nil {
-		reader.Close()
-		m.OnUploadError(seekErr)
-		return
+		return "", err
 	}
 	defer reader.Close()
-	m.PerformUpload(reader, filename, preserveClipboard)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.setActiveUpload(job, cancel)
+	defer m.setActiveUpload(nil, nil)
+
+	job.Attempts++
+	log.Printf("Starting upload: %s (attempt %d)", job.Name, job.Attempts)
+
+	progress := puush.NewProgressReader(reader, size, m.progressReporter(job.Name, size))
+	options := puush.UploadOptions{PoolId: m.config.General.UploadPoolId}
+	return m.api.UploadWithOptions(ctx, progress, job.Name, options)
 }
 
-func (m *TrayManager) OnUploadComplete(urlResponse string, preserveClipboard bool) {
-	log.Println("Upload complete:", urlResponse)
-
-	// Set updated disk usage to config
-	m.config.Account.Usage = m.api.Account.DiskUsage
-
-	// Update the tray icon to the "complete" state
-	m.OnTrayProgressComplete()
-	m.ShowUploadNotification(urlResponse)
-
-	if m.config.General.CopyToClipboard && !preserveClipboard {
-		fyne.CurrentApp().Clipboard().SetContent(urlResponse)
+// progressReporter shows the upload's progress in the tray icon and tooltip,
+// only redrawing when the whole percentage changes.
+func (m *TrayManager) progressReporter(name string, size int64) func(float64) {
+	last := -1
+	return func(percentage float64) {
+		if int(percentage) == last {
+			return
+		}
+		last = int(percentage)
+		m.OnTrayProgressUpdate(percentage, fmt.Sprintf("puush: uploading %s (%d%% of %s)", name, last, humanSize(size)))
 	}
-	if m.config.General.OpenBrowser {
-		if u, err := url.Parse(urlResponse); err == nil {
-			fyne.CurrentApp().OpenURL(u)
+}
+
+// ActiveUpload returns the name of the file being uploaded right now, if any.
+func (m *TrayManager) ActiveUpload() (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.activeUpload == nil {
+		return "", false
+	}
+	return m.activeUpload.Name, true
+}
+
+// CancelUpload stops the upload that's running right now.
+func (m *TrayManager) CancelUpload() {
+	m.mu.Lock()
+	cancel := m.cancelUpload
+	m.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (m *TrayManager) setActiveUpload(job *uploadJob, cancel context.CancelFunc) {
+	m.mu.Lock()
+	m.activeUpload = job
+	m.cancelUpload = cancel
+	m.mu.Unlock()
+	// Shows or hides "Cancel Upload" in the menu
+	m.stateChanged()
+}
+
+// processBatch uploads jobs one after another. Links of a batch with several
+// files are copied together at the end.
+func (m *TrayManager) processBatch(jobs []*uploadJob) {
+	var done []*uploadJob
+	var links []string
+
+	for _, job := range jobs {
+		link, err := m.runUpload(job)
+		switch {
+		case err == nil:
+			log.Println("Upload complete:", link)
+			m.OnTrayProgressComplete()
+			m.forgetFailed(job)
+			m.config.Capture.RememberLocalCopy(link, job.LocalCopy)
+			done = append(done, job)
+			links = append(links, link)
+		case errors.Is(err, context.Canceled):
+			log.Println("Upload cancelled:", job.Name)
+			fyne.Do(m.ResetTrayIcon)
+			m.ShowNotification("Upload cancelled", job.Name)
+		default:
+			m.onUploadFailed(job, err)
 		}
 	}
 
-	// Refresh the history to reflect the new upload
+	if len(links) == 0 {
+		return
+	}
+	m.config.Account.Usage = m.api.Account.DiskUsage
+
+	if len(links) == 1 {
+		m.onLinkReady(links[0], done[0].PreserveClipboard)
+	} else {
+		m.onLinksReady(links)
+	}
+
+	// Refresh the history to reflect the new uploads
 	go m.RefreshHistory()
 }
 
+func (m *TrayManager) onLinkReady(link string, preserveClipboard bool) {
+	m.ShowUploadNotification(link)
+
+	if m.config.General.CopyToClipboard && !preserveClipboard {
+		fyne.Do(func() { fyne.CurrentApp().Clipboard().SetContent(link) })
+	}
+	if m.config.General.OpenBrowser {
+		if u, err := url.Parse(link); err == nil {
+			fyne.Do(func() { fyne.CurrentApp().OpenURL(u) })
+		}
+	}
+}
+
+// onLinksReady finishes a batch of several files: all links are copied at
+// once, one per line. (Opening them all in the browser would be a lot of tabs.)
+func (m *TrayManager) onLinksReady(links []string) {
+	all := strings.Join(links, "\n")
+	message := fmt.Sprintf("%d files puushed!", len(links))
+	if m.config.General.CopyToClipboard {
+		fyne.Do(func() { fyne.CurrentApp().Clipboard().SetContent(all) })
+		message += " All links were copied."
+	}
+	m.ShowNotification(message, all)
+}
+
+// onUploadFailed retries uploads that failed because of the connection, and
+// keeps the rest (or the ones that keep failing) for retrying by hand.
+func (m *TrayManager) onUploadFailed(job *uploadJob, err error) {
+	log.Printf("Upload of %s failed: %v", job.Name, err)
+	m.OnTrayProgressFail()
+
+	if errors.Is(err, fs.ErrNotExist) {
+		m.ShowErrorNotification(fmt.Sprintf("%s could not be uploaded because it no longer exists.", job.Name))
+		m.forgetFailed(job)
+		return
+	}
+	if errors.Is(err, puush.PuushErrorUploadTooLarge) {
+		// Trying again won't make it smaller
+		m.ShowErrorNotification(puush.FormatError(err))
+		m.forgetFailed(job)
+		return
+	}
+
+	if puush.ShouldRetryError(err) && job.Attempts <= len(retryDelays) {
+		delay := retryDelays[job.Attempts-1]
+		if job.Attempts == 1 {
+			m.ShowErrorNotification(puush.FormatError(err) + " puush will try again in a moment.")
+		}
+		time.AfterFunc(delay, func() {
+			if err := m.enqueue(uploadBatch{jobs: []*uploadJob{job}}); err != nil {
+				m.keepFailed(job)
+			}
+		})
+		return
+	}
+
+	m.keepFailed(job)
+	m.ShowErrorNotification(puush.FormatError(err) + " The upload was kept, so you can retry it from the tray menu.")
+}
+
+// OnUploadError reports an error that happened before an upload could start.
 func (m *TrayManager) OnUploadError(err error) {
 	log.Println("Upload error:", err)
 
@@ -98,26 +241,15 @@ func (m *TrayManager) OnUploadError(err error) {
 	m.ShowErrorNotification(puush.FormatError(err))
 }
 
-func seekableReaderSize(reader io.Seeker) (int64, error) {
-	total, err := seekToEnd(reader)
-	if err != nil {
-		return 0, err
+func humanSize(size int64) string {
+	const unit = 1024
+	if size < unit {
+		return fmt.Sprintf("%d B", size)
 	}
-	if err = seekToStart(reader); err != nil {
-		return 0, err
+	div, exp := int64(unit), 0
+	for n := size / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
 	}
-	return total, nil
-}
-
-func seekToStart(reader io.Seeker) error {
-	_, err := reader.Seek(0, io.SeekStart)
-	return err
-}
-
-func seekToEnd(reader io.Seeker) (int64, error) {
-	total, err := reader.Seek(0, io.SeekEnd)
-	if err != nil {
-		return 0, err
-	}
-	return total, nil
+	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
 }

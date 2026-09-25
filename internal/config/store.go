@@ -13,6 +13,13 @@ type JsonStore struct {
 
 // NewStore creates a new config store for the current platform.
 func NewStore() Store {
+	return &JsonStore{
+		Path: filepath.Join(Dir(), "config.json"),
+	}
+}
+
+// Dir is the app's folder for settings and other state, e.g. %AppData%\yeet
+func Dir() string {
 	// This should automatically resolve to the proper user configuration directory
 	// for each platform (e.g. %appdata% or ~/.config)
 	configDir, err := os.UserConfigDir()
@@ -22,10 +29,12 @@ func NewStore() Store {
 		home, _ := os.UserHomeDir()
 		configDir = filepath.Join(home, ".config")
 	}
+	return filepath.Join(configDir, "yeet")
+}
 
-	return &JsonStore{
-		Path: filepath.Join(configDir, "yeet", "config.json"),
-	}
+// PendingDir holds uploads that failed, until they're retried or discarded.
+func PendingDir() string {
+	return filepath.Join(Dir(), "pending")
 }
 
 // Load reads the configuration from the json file.

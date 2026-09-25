@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 
 	"github.com/sundeiii/yeet-client/assets"
 	"github.com/sundeiii/yeet-client/internal/config"
@@ -29,6 +30,11 @@ type UI struct {
 
 	settingsWindow fyne.Window
 	startupWindow  fyne.Window
+
+	// Parts of the app window, while it's open
+	windowTabs  *container.AppTabs
+	refreshHome func()
+	uploads     *uploadsView
 
 	requestUpdateCheck  func(branch *updater.Branch) bool
 	updateCheckFinished func(time.Time)
@@ -66,7 +72,10 @@ func (ui *UI) Run() {
 		ui.tray.Initialize("puush")
 		ui.tray.Apply(ui.app)
 		ui.tray.SetSettingsCallback(ui.ShowSettingsWindow)
+		ui.tray.SetOpenCallback(ui.ShowAppWindow)
+		ui.tray.OnChange(ui.onTrayChange)
 		ui.tray.StartUploadQueue()
+		ui.tray.StartHistoryRefresh()
 		ui.startIPC()
 
 		// Start directory monitoring
@@ -76,6 +85,7 @@ func (ui *UI) Run() {
 
 		go ui.tray.PerformBackgroundAuthentication()
 		go ui.tray.RefreshHistory()
+		go ui.tray.RefreshPools()
 
 		// Setup screenshot provider
 		providerName := ui.config.Capture.ScreenshotProvider
@@ -156,8 +166,17 @@ func (ui *UI) UpdateAccountConfiguration() {
 		if ui.api.Account.SubscriptionEnd != nil {
 			ui.config.Account.Expiry = ui.api.Account.SubscriptionEnd.Format(time.DateTime)
 		}
-		fyne.Do(ui.tray.RefreshHistory)
+		// Both ask the server, so not on the main thread
+		go ui.tray.RefreshHistory()
+		go ui.tray.RefreshPools()
 	}
+}
+
+// Logout forgets the account on this computer.
+func (ui *UI) Logout() {
+	ui.config.Account.Reset()
+	ui.api.Account.Reset()
+	ui.tray.ResetAccountState()
 }
 
 func (ui *UI) UpdateAutostartConfiguration(enabled bool) {
@@ -194,8 +213,8 @@ func (ui *UI) showRelevantWindow() {
 		window.RequestFocus()
 		return
 	}
-	// Show settings window otherwise
-	ui.ShowSettingsWindow()
+	// Show the app window otherwise
+	ui.ShowAppWindow()
 }
 
 func (ui *UI) startIPC() {

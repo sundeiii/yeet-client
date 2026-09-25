@@ -73,6 +73,8 @@ type GeneralConfig struct {
 	DisabledToggle    bool
 	CopyToClipboard   bool
 	AutoUpdate        bool
+	// UploadPoolId is the pool new uploads go into; 0 is the account's default
+	UploadPoolId int
 }
 
 type CaptureConfig struct {
@@ -83,6 +85,43 @@ type CaptureConfig struct {
 	SaveImagePath         string
 	MonitorDirectories    []string
 	ScreenshotProvider    string
+	// DelaySeconds is the countdown before a delayed capture
+	DelaySeconds int
+	// LastArea is the latest area picked for "Capture Last Area" (x, y, width, height)
+	LastArea []int
+	// LocalCopies maps upload links to the file they came from, for "Show in Folder"
+	LocalCopies map[string]string
+}
+
+// maxLocalCopies is how many upload links remember their local file
+const maxLocalCopies = 50
+
+// RememberLocalCopy records which file on this computer an upload came from.
+func (capture *CaptureConfig) RememberLocalCopy(link, path string) {
+	if link == "" || path == "" {
+		return
+	}
+	if capture.LocalCopies == nil {
+		capture.LocalCopies = map[string]string{}
+	}
+	capture.LocalCopies[link] = path
+	// Forget arbitrary old ones; only the recent uploads menu uses these
+	for key := range capture.LocalCopies {
+		if len(capture.LocalCopies) <= maxLocalCopies {
+			break
+		}
+		if key != link {
+			delete(capture.LocalCopies, key)
+		}
+	}
+}
+
+// Delay is the countdown before a delayed capture.
+func (capture *CaptureConfig) Delay() time.Duration {
+	if capture.DelaySeconds <= 0 {
+		return 3 * time.Second
+	}
+	return time.Duration(capture.DelaySeconds) * time.Second
 }
 
 type HotkeyConfig struct {
@@ -92,6 +131,8 @@ type HotkeyConfig struct {
 	UploadFile              string
 	UploadClipboard         string
 	Toggle                  string
+	RepeatArea              string
+	DelayedArea             string
 }
 
 type MiscConfig struct {
@@ -136,6 +177,7 @@ func DefaultConfig() *Config {
 			SaveImagePath:         "",
 			MonitorDirectories:    []string{},
 			ScreenshotProvider:    "",
+			DelaySeconds:          3,
 		},
 		Hotkeys: HotkeyConfig{
 			ScreenSelection:         "Ctrl+Shift+4",
@@ -144,6 +186,8 @@ func DefaultConfig() *Config {
 			UploadFile:              "Ctrl+Shift+U",
 			UploadClipboard:         "Ctrl+Shift+5",
 			Toggle:                  "Ctrl+Alt+P",
+			RepeatArea:              "Ctrl+Shift+6",
+			DelayedArea:             "Ctrl+Shift+7",
 		},
 		Misc: MiscConfig{
 			LastUpdate: time.Now(),

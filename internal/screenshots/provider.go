@@ -2,6 +2,7 @@ package screenshots
 
 import (
 	"errors"
+	"image"
 	"io"
 )
 
@@ -29,6 +30,16 @@ type ScreenshotProvider interface {
 
 	// CaptureWindow captures a specific window
 	CaptureWindow() (io.ReadSeekCloser, error)
+}
+
+// RegionCapturer is implemented by providers that can capture the same part
+// of the screen again without asking, for "Capture Last Area".
+type RegionCapturer interface {
+	// LastArea is the area picked in the latest CaptureArea call, in screen coordinates
+	LastArea() (image.Rectangle, bool)
+
+	// CaptureRegion captures the given part of the screen
+	CaptureRegion(area image.Rectangle) (io.ReadSeekCloser, error)
 }
 
 // ScreenshotProviders is a list of functions that return available screenshot providers
