@@ -210,6 +210,28 @@ jobs:
         needs: build
         runs-on: ubuntu-latest
         steps:
+            - name: Check out the history
+              uses: actions/checkout@v5
+              with:
+                  fetch-depth: 0
+
+            # The notes are the commits since the previous release, since
+            # changes go straight to main rather than through pull requests
+            - name: Write release notes
+              run: |
+                  previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+                  range="${previous:+$previous..}${GITHUB_REF_NAME}"
+                  {
+                      echo "## What's new"
+                      echo
+                      git log --no-merges --reverse --format='### %s%n%n%b' "$range" | sed '/^Co-Authored-By:/d; /^Claude-Session:/d'
+                      echo
+                      if [ -n "$previous" ]; then
+                          echo "**All changes:** https://github.com/${GITHUB_REPOSITORY}/compare/${previous}...${GITHUB_REF_NAME}"
+                      fi
+                  } > release-notes.md
+                  cat release-notes.md
+
             - name: Download builds
               uses: actions/download-artifact@v5
               with:
@@ -220,7 +242,7 @@ jobs:
               uses: softprops/action-gh-release@v3
               with:
                   name: yeet-client ${{ github.ref_name }}
-                  generate_release_notes: true
+                  body_path: release-notes.md
                   files: dist/*
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
