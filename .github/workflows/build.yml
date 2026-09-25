@@ -8,6 +8,10 @@ on:
     release:
         types: [published, created]
 
+# Needed to attach the built apps to releases
+permissions:
+    contents: write
+
 jobs:
     build:
         name: Build ${{ matrix.name }}
