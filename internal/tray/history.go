@@ -20,8 +20,30 @@ func (m *TrayManager) RefreshHistory() {
 	if err != nil {
 		return
 	}
-	m.uploadHistory = history
-	m.rebuildMenuItems()
+
+	// This often runs in a background goroutine, but the menu may only be
+	// changed on the main thread
+	fyne.Do(func() {
+		if sameHistory(m.uploadHistory, history) {
+			return
+		}
+		m.uploadHistory = history
+		m.rebuildMenuItems()
+	})
+}
+
+// sameHistory reports whether two history lists show the same entries, so the
+// tray menu only gets rebuilt when something actually changed.
+func sameHistory(a, b []*puush.HistoryItem) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Id != b[i].Id || a[i].Views != b[i].Views || a[i].FileName != b[i].FileName {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *TrayManager) BuildHistoryMenu() []*fyne.MenuItem {

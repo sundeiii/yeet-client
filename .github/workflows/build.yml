@@ -59,6 +59,11 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libgtk-3-dev
 
+            # Tests need the same C toolchain as the build, so run them once on Linux
+            - name: Test
+              if: matrix.name == 'linux-amd64'
+              run: go test ./internal/tray/ ./internal/config/ ./internal/updater/ ./pkg/...
+
             - name: Set output filename
               id: vars
               shell: bash

@@ -98,7 +98,8 @@ func (m *TrayManager) ShowErrorNotification(message string) {
 // TogglePuushing will toggle the puushing functionality on or off
 func (m *TrayManager) TogglePuushing() {
 	m.config.General.DisabledToggle = !m.config.General.DisabledToggle
-	m.rebuildMenuItems()
+	// The hotkey calls this from its own goroutine; menus must change on the main thread
+	fyne.Do(m.rebuildMenuItems)
 
 	if m.config.General.DisabledToggle {
 		m.ShowNotification("puush was disabled!", "Shortcut keys will no longer be accepted.")
@@ -152,10 +153,11 @@ func (m *TrayManager) buildString() string {
 	if m.targetApp == nil {
 		return "puush"
 	}
-	if m.targetApp.Metadata().Build == 0 {
+	metadata := m.targetApp.Metadata()
+	if metadata.Build == 0 || metadata.Version == "" || metadata.Version == "0.0.0" {
 		return "puush dev"
 	}
-	return fmt.Sprintf("puush b%d", m.targetApp.Metadata().Build)
+	return fmt.Sprintf("puush %s", metadata.Version)
 }
 
 func (m *TrayManager) rebuildMenuItems() {
@@ -221,13 +223,14 @@ func (m *TrayManager) rebuildMenuItems() {
 		settings,
 	)
 	m.menu.Items = items
-	m.menu.Refresh()
 
 	if m.targetApp == nil {
 		return
 	}
 
-	// Add back "Quit" button by applying the menu again
+	// Applying the menu redraws the tray once and adds back the "Quit" button.
+	// (menu.Refresh() would redraw it a second time, which could leave
+	// duplicate entries behind on Windows.)
 	if desktopApp, ok := m.targetApp.(desktop.App); ok {
 		desktopApp.SetSystemTrayMenu(m.menu)
 	}
