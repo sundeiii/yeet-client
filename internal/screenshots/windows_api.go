@@ -201,7 +201,8 @@ func syscallErr(name string, err error) error {
 
 func getSystemMetrics(index int) int {
 	r1, _, _ := procGetSystemMetrics.Call(uintptr(index))
-	return int(r1)
+	// Screens left of or above the main one have negative positions
+	return int(int32(r1))
 }
 
 func getForegroundWindow() (uintptr, error) {
