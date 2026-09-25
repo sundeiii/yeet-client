@@ -15,6 +15,9 @@ type UploadOptions struct {
 	// PoolId is the pool to upload into; 0 uses the account's default pool.
 	// Servers that don't know about pools ignore it.
 	PoolId int
+
+	// Size of the file, if known. Big files are sent in pieces.
+	Size int64
 }
 
 // Upload sends a file to puush and returns the URL of the uploaded file.
@@ -28,6 +31,13 @@ func (c *Client) Upload(file io.Reader, filename string) (string, error) {
 func (c *Client) UploadWithOptions(ctx context.Context, file io.Reader, filename string, options UploadOptions) (string, error) {
 	if !c.Account.Credentials.HasApiKey() {
 		return "", PuushErrorInvalidCredentials
+	}
+	if options.Size > chunkThreshold {
+		link, err := c.uploadChunked(ctx, file, filename, options)
+		// Servers without piece uploads get the whole file at once
+		if !errors.Is(err, ErrNotSupported) {
+			return link, err
+		}
 	}
 
 	pr, pw := io.Pipe()

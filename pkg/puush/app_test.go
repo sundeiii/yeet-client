@@ -2,11 +2,14 @@ package puush
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -133,5 +136,45 @@ func TestCreateAlbum(t *testing.T) {
 	link, err := client.CreateAlbum([]string{"https://x/a.png", "https://x/b.png"}, "")
 	if err != nil || link != "https://x/a/abcdefgh" {
 		t.Errorf("CreateAlbum() = %q, %v", link, err)
+	}
+}
+
+func TestChunkedUpload(t *testing.T) {
+	var received bytes.Buffer
+	failedOnce := false
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/chunk/start":
+			r.ParseForm()
+			if r.FormValue("size") != "250" || r.FormValue("name") != "big.mp4" || r.FormValue("p") != "6" {
+				t.Errorf("start: %v", r.Form)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"id": "abc", "chunk": 100}`)
+		case r.URL.Path == "/api/chunk/abc/finish":
+			io.WriteString(w, "0,https://x/big.mp4,500,500")
+		case r.URL.Path == "/api/chunk/abc":
+			// The second piece fails once, like a flaky connection
+			if r.URL.Query().Get("o") == "100" && !failedOnce {
+				failedOnce = true
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			if r.URL.Query().Get("k") != "secret" || r.URL.Query().Get("o") != strconv.Itoa(received.Len()) {
+				t.Errorf("piece: %v", r.URL.Query())
+			}
+			io.Copy(&received, r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"received": %d}`, received.Len())
+		}
+	})
+
+	file := bytes.Repeat([]byte("x"), 250)
+	link, err := client.uploadChunked(context.Background(), bytes.NewReader(file), "big.mp4", UploadOptions{PoolId: 6, Size: 250})
+	if err != nil || link != "https://x/big.mp4" || client.Account.DiskUsage != 500 {
+		t.Fatalf("uploadChunked() = %q, %v", link, err)
+	}
+	if !bytes.Equal(received.Bytes(), file) || !failedOnce {
+		t.Errorf("server got %d bytes (retried: %v)", received.Len(), failedOnce)
 	}
 }

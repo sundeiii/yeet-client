@@ -86,7 +86,7 @@ func (m *TrayManager) runUpload(job *uploadJob) (string, error) {
 	log.Printf("Starting upload: %s (attempt %d)", job.Name, job.Attempts)
 
 	progress := puush.NewProgressReader(reader, size, m.progressReporter(job.Name, size))
-	options := puush.UploadOptions{PoolId: m.config.General.UploadPoolId}
+	options := puush.UploadOptions{PoolId: m.config.General.UploadPoolId, Size: size}
 	return m.api.UploadWithOptions(ctx, progress, job.Name, options)
 }
 
