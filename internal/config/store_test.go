@@ -84,3 +84,19 @@ func TestOldConfigsGetNewDefaults(t *testing.T) {
 		t.Errorf("new settings should get their defaults, got %q and %v", cfg.Hotkeys.RepeatArea, cfg.Capture.Delay())
 	}
 }
+
+func TestOldServerAddressMoves(t *testing.T) {
+	store := &JsonStore{Path: filepath.Join(t.TempDir(), "config.json")}
+	os.WriteFile(store.Path, []byte(`{"Misc": {"ServerURL": "https://p.tupsujumal.ee"}}`), 0644)
+	cfg, _ := store.Load()
+	if cfg.Misc.ServerURL != DefaultServerURL {
+		t.Errorf("expected the new address, got %q", cfg.Misc.ServerURL)
+	}
+
+	// Other servers are left alone
+	os.WriteFile(store.Path, []byte(`{"Misc": {"ServerURL": "https://puush.example.com"}}`), 0644)
+	cfg, _ = store.Load()
+	if cfg.Misc.ServerURL != "https://puush.example.com" {
+		t.Errorf("a custom server must not change, got %q", cfg.Misc.ServerURL)
+	}
+}

@@ -1,6 +1,6 @@
 # yeet-client
 
-The desktop app for [yeet](https://p.tupsujumal.ee): take a screenshot or pick a file, and a short link lands in your clipboard. Works on Windows, macOS and Linux.
+The desktop app for [yeet](https://img.sundei.eu): take a screenshot or pick a file, and a short link lands in your clipboard. Works on Windows, macOS and Linux.
 
 It speaks the classic puush API, so it also works with other puush-compatible servers. Change the server in **Settings → Advanced**.
 
@@ -67,7 +67,7 @@ go build -ldflags "-X github.com/sundeiii/yeet-client/internal/config.DefaultSer
 
 ```go
 client := puush.NewClientFromLogin("you@example.com", "password")
-client.SetBaseURL("https://p.tupsujumal.ee")
+client.SetBaseURL("https://img.sundei.eu")
 if err := client.Authenticate(); err != nil {
 	panic(err)
 }

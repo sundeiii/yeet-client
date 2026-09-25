@@ -53,6 +53,7 @@ func (s *JsonStore) Load() (*Config, error) {
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
+	cfg.migrate()
 
 	return cfg, nil
 }

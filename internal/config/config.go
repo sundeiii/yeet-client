@@ -155,7 +155,20 @@ func (misc *MiscConfig) ParseServerURL() *url.URL {
 
 // DefaultServerURL is the server a fresh install talks to. It can be changed
 // at build time with -ldflags "-X github.com/sundeiii/yeet-client/internal/config.DefaultServerURL=https://..."
-var DefaultServerURL = "https://p.tupsujumal.ee"
+var DefaultServerURL = "https://img.sundei.eu"
+
+// oldServerURLs are earlier addresses of the default server; installs that
+// still point at one move to the current address.
+var oldServerURLs = []string{"https://p.tupsujumal.ee", "https://p.tupsujumal.ee/"}
+
+// migrate updates settings saved by older versions.
+func (cfg *Config) migrate() {
+	for _, old := range oldServerURLs {
+		if cfg.Misc.ServerURL == old {
+			cfg.Misc.ServerURL = DefaultServerURL
+		}
+	}
+}
 
 // DefaultConfig returns a Config populated with default values.
 func DefaultConfig() *Config {
