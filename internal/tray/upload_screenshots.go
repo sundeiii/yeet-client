@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"github.com/sundeiii/yeet-client/internal/editor"
 	"github.com/sundeiii/yeet-client/internal/screenshots"
 )
 
@@ -23,11 +24,15 @@ const (
 	captureDesktop
 	captureWindow
 	captureLastArea
+	captureEditArea
 )
 
 func (m *TrayManager) UploadAreaScreenshot()    { m.captureAndUpload(captureArea) }
 func (m *TrayManager) UploadDesktopScreenshot() { m.captureAndUpload(captureDesktop) }
 func (m *TrayManager) UploadWindowScreenshot()  { m.captureAndUpload(captureWindow) }
+
+// EditAreaScreenshot captures an area and opens it in the editor first.
+func (m *TrayManager) EditAreaScreenshot() { m.captureAndUpload(captureEditArea) }
 
 // UploadLastAreaScreenshot captures the area that was picked last time again.
 func (m *TrayManager) UploadLastAreaScreenshot() { m.captureAndUpload(captureLastArea) }
@@ -72,7 +77,7 @@ func (m *TrayManager) captureAndUpload(kind captureKind) {
 	var err error
 
 	switch kind {
-	case captureArea:
+	case captureArea, captureEditArea:
 		reader, err = provider.CaptureArea()
 		if err == nil {
 			m.rememberLastArea(provider)
@@ -110,6 +115,15 @@ func (m *TrayManager) captureAndUpload(kind captureKind) {
 		return
 	}
 
+	if kind == captureEditArea || m.config.Capture.EditBeforeUpload {
+		edited := m.editScreenshot(data)
+		if edited == nil {
+			log.Println("Screenshot discarded in the editor")
+			return
+		}
+		data = edited
+	}
+
 	filename := getImageFilename(data)
 	localCopy := m.OnScreenshotCaptured(data, filename)
 	m.enqueueJob(&uploadJob{
@@ -118,6 +132,19 @@ func (m *TrayManager) captureAndUpload(kind captureKind) {
 		LocalCopy:         localCopy,
 		PreserveClipboard: m.config.Capture.SaveImagesToClipboard,
 	})
+}
+
+// editScreenshot opens the editor and waits for it. It returns the edited
+// picture, or nil when the user cancelled.
+func (m *TrayManager) editScreenshot(data []byte) []byte {
+	if m.targetApp == nil {
+		return data
+	}
+	result := make(chan []byte, 1)
+	fyne.Do(func() {
+		editor.Open(m.targetApp, data, func(edited []byte) { result <- edited })
+	})
+	return <-result
 }
 
 func (m *TrayManager) rememberLastArea(provider screenshots.ScreenshotProvider) {

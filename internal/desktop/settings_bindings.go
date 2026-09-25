@@ -55,6 +55,9 @@ func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
 	delayedAreaButton := createHotkeyButton(ui.config.Hotkeys.DelayedArea, func(s string) {
 		ui.config.Hotkeys.DelayedArea = s
 	})
+	editAreaButton := createHotkeyButton(ui.config.Hotkeys.EditArea, func(s string) {
+		ui.config.Hotkeys.EditArea = s
+	})
 
 	rowFullscreen := container.NewGridWithColumns(2, widget.NewLabel("Capture full screen:"), fullScreenButton)
 	rowWindow := container.NewGridWithColumns(2, widget.NewLabel("Capture current window:"), currentWindowButton)
@@ -64,11 +67,13 @@ func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
 	rowToggle := container.NewGridWithColumns(2, widget.NewLabel("Toggle puush functionality:"), togglePuushButton)
 	rowRepeatArea := container.NewGridWithColumns(2, widget.NewLabel("Capture last area again:"), repeatAreaButton)
 	rowDelayedArea := container.NewGridWithColumns(2, widget.NewLabel("Capture area after a delay:"), delayedAreaButton)
+	rowEditArea := container.NewGridWithColumns(2, widget.NewLabel("Capture area and edit:"), editAreaButton)
 
 	content := container.NewVBox(
 		rowFullscreen,
 		rowWindow,
 		rowArea,
+		rowEditArea,
 		rowRepeatArea,
 		rowDelayedArea,
 		rowFile,

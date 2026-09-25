@@ -280,6 +280,10 @@ func (m *TrayManager) rebuildMenuItems() {
 		go m.UploadAreaScreenshot()
 	})
 	captureArea.Icon = selectionIcon
+	editArea := fyne.NewMenuItem("Capture Area and Edit", func() {
+		go m.EditAreaScreenshot()
+	})
+	editArea.Icon = selectionIcon
 	captureLastArea := fyne.NewMenuItem("Capture Last Area Again", func() {
 		go m.UploadLastAreaScreenshot()
 	})
@@ -314,6 +318,7 @@ func (m *TrayManager) rebuildMenuItems() {
 		captureWindow,
 		captureDesktop,
 		captureArea,
+		editArea,
 		captureLastArea,
 		delayed,
 		uploadClipboard,

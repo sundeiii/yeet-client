@@ -77,6 +77,7 @@ func (ui *UI) homeContent(w fyne.Window, goToAccount func()) []fyne.CanvasObject
 	captureArea := actionButton("Capture Area", selectionActionIcon, hideThen(ui.tray.UploadAreaScreenshot))
 	captureDesktop := actionButton("Capture Desktop", fullscreenActionIcon, hideThen(ui.tray.UploadDesktopScreenshot))
 	captureWindow := actionButton("Capture Window", windowActionIcon, hideThen(ui.tray.UploadWindowScreenshot))
+	captureEdit := actionButton("Capture and Edit", selectionActionIcon, hideThen(ui.tray.EditAreaScreenshot))
 	captureLast := actionButton("Last Area Again", selectionActionIcon, hideThen(ui.tray.UploadLastAreaScreenshot))
 	if !ui.tray.HasLastArea() {
 		captureLast.Instance.Disable()
@@ -85,8 +86,9 @@ func (ui *UI) homeContent(w fyne.Window, goToAccount func()) []fyne.CanvasObject
 	uploadFile := actionButton("Upload File", uploadActionIcon, ui.tray.UploadFileFromDialog)
 
 	actions := container.NewGridWithColumns(3,
-		captureArea, captureDesktop, captureWindow,
-		captureLast, uploadClipboard, uploadFile,
+		captureArea, captureEdit, captureDesktop,
+		captureWindow, captureLast, uploadClipboard,
+		uploadFile,
 	)
 	objects = append(objects, createGroup("Quick actions", actions))
 

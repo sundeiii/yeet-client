@@ -104,3 +104,24 @@ func (c *Client) postJson(path string, params url.Values, target any) error {
 	}
 	return json.NewDecoder(response.Body).Decode(target)
 }
+
+// CreateAlbum groups uploads, given by their links, into an album and
+// returns the album's link.
+func (c *Client) CreateAlbum(links []string, title string) (string, error) {
+	params := url.Values{}
+	for _, link := range links {
+		params.Add("u", link)
+	}
+	params.Add("t", title)
+
+	var body struct {
+		Url string `json:"url"`
+	}
+	if err := c.postJson("/api/album", params, &body); err != nil {
+		return "", err
+	}
+	if body.Url == "" {
+		return "", errors.New("puush: the server did not return an album link")
+	}
+	return body.Url, nil
+}

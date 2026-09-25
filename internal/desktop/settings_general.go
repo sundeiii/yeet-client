@@ -60,13 +60,19 @@ func (ui *UI) buildGeneralTab() fyne.CanvasObject {
 	delaySelect.SetSelected(fmt.Sprintf("%d seconds", int(ui.config.Capture.Delay().Seconds())))
 	delayRow := container.NewHBox(widget.NewLabel("Delayed captures wait"), delaySelect)
 
+	editCheckbox := widget.NewCheck("Open the editor after every screenshot", func(b bool) { ui.config.Capture.EditBeforeUpload = b })
+	editCheckbox.Checked = ui.config.Capture.EditBeforeUpload
+
+	albumCheckbox := widget.NewCheck("Share several files as one album link", func(b bool) { ui.config.General.Albums = b })
+	albumCheckbox.Checked = ui.config.General.Albums
+
 	return container.NewVScroll(container.NewVBox(
 		widget.NewSeparator(),
 		createGroup("General Settings", startupCheckbox),
 		widget.NewSeparator(),
 		createGroup("On successful puush", onSuccessGrid),
 		widget.NewSeparator(),
-		createGroup("Capturing", delayRow),
+		createGroup("Capturing", container.NewVBox(delayRow, editCheckbox, albumCheckbox)),
 		widget.NewSeparator(),
 	))
 }

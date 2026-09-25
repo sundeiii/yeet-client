@@ -188,6 +188,16 @@ func (m *TrayManager) onLinkReady(link string, preserveClipboard bool) {
 // onLinksReady finishes a batch of several files: all links are copied at
 // once, one per line. (Opening them all in the browser would be a lot of tabs.)
 func (m *TrayManager) onLinksReady(links []string) {
+	// One album link is easier to share than a pile of links
+	if m.config.General.Albums {
+		album, err := m.api.CreateAlbum(links, "")
+		if err == nil {
+			m.onLinkReady(album, false)
+			return
+		}
+		log.Printf("Could not make an album: %v", err)
+	}
+
 	all := strings.Join(links, "\n")
 	message := fmt.Sprintf("%d files puushed!", len(links))
 	if m.config.General.CopyToClipboard {

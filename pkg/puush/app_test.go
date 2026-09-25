@@ -120,3 +120,18 @@ func TestHistoryWithCommasInFilenames(t *testing.T) {
 		t.Errorf("unexpected items: %+v %+v", items[0], items[1])
 	}
 }
+
+func TestCreateAlbum(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		if r.URL.Path != "/api/album" || len(r.Form["u"]) != 2 || r.FormValue("u") != "https://x/a.png" {
+			t.Errorf("unexpected request %s %v", r.URL.Path, r.Form)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"url": "https://x/a/abcdefgh"}`)
+	})
+	link, err := client.CreateAlbum([]string{"https://x/a.png", "https://x/b.png"}, "")
+	if err != nil || link != "https://x/a/abcdefgh" {
+		t.Errorf("CreateAlbum() = %q, %v", link, err)
+	}
+}

@@ -75,6 +75,8 @@ type GeneralConfig struct {
 	AutoUpdate        bool
 	// UploadPoolId is the pool new uploads go into; 0 is the account's default
 	UploadPoolId int
+	// Albums: several files uploaded at once share one album link
+	Albums bool
 }
 
 type CaptureConfig struct {
@@ -89,6 +91,8 @@ type CaptureConfig struct {
 	DelaySeconds int
 	// LastArea is the latest area picked for "Capture Last Area" (x, y, width, height)
 	LastArea []int
+	// EditBeforeUpload opens the editor after every screenshot
+	EditBeforeUpload bool
 	// LocalCopies maps upload links to the file they came from, for "Show in Folder"
 	LocalCopies map[string]string
 }
@@ -133,6 +137,7 @@ type HotkeyConfig struct {
 	Toggle                  string
 	RepeatArea              string
 	DelayedArea             string
+	EditArea                string
 }
 
 type MiscConfig struct {
@@ -181,6 +186,7 @@ func DefaultConfig() *Config {
 			ContextMenu:       true,
 			DisabledToggle:    false,
 			AutoUpdate:        true,
+			Albums:            true,
 		},
 		Capture: CaptureConfig{
 			UploadQuality:         screenshots.QualityBest,
@@ -201,6 +207,7 @@ func DefaultConfig() *Config {
 			Toggle:                  "Ctrl+Alt+P",
 			RepeatArea:              "Ctrl+Shift+6",
 			DelayedArea:             "Ctrl+Shift+7",
+			EditArea:                "Ctrl+Shift+8",
 		},
 		Misc: MiscConfig{
 			LastUpdate: time.Now(),
