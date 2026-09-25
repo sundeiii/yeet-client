@@ -1,0 +1,11 @@
+# {{.OwnershipMarker}}
+[Nemo Action]
+Active=true
+Name={{.MenuLabel}}
+Comment=Upload selected files with puush
+Icon-Name={{.IconPath}}
+Exec={{desktopEntryQuote .Executable}} -upload %F
+Selection=notnone
+Extensions=nodirs;
+Quote=double
+Terminal=false

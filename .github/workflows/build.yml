@@ -1,0 +1,213 @@
+name: Build & Release
+
+on:
+    push:
+        branches: ["*"]
+    pull_request:
+        branches: ["*"]
+    release:
+        types: [published, created]
+
+jobs:
+    build:
+        name: Build ${{ matrix.name }}
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                include:
+                    - os: windows-latest
+                      name: windows-amd64
+                      goos: windows
+                      goarch: amd64
+                    - os: ubuntu-latest
+                      name: linux-amd64
+                      goos: linux
+                      goarch: amd64
+                    - os: ubuntu-24.04-arm
+                      name: linux-arm64
+                      goos: linux
+                      goarch: arm64
+                    - os: macos-latest
+                      name: macos-arm64
+                      goos: darwin
+                      goarch: arm64
+                    - os: macos-latest
+                      name: macos-amd64
+                      goos: darwin
+                      goarch: amd64
+            fail-fast: false
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version: "stable"
+                  check-latest: true
+
+            - name: Install Dependencies (Linux)
+              if: runner.os == 'Linux'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libgtk-3-dev
+
+            - name: Set output filename
+              id: vars
+              shell: bash
+              run: |
+                  if [ "$RUNNER_OS" = "Windows" ]; then
+                    echo "filename=yeet-${{ matrix.name }}.exe" >> $GITHUB_OUTPUT
+                  else
+                    echo "filename=yeet-${{ matrix.name }}" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Set build metadata
+              id: metadata
+              shell: bash
+              run: |
+                  echo "build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+                  echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+                  echo "timestamp=$(git show -s --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
+                  echo "version=$(awk -F '"' '/AppVersion[[:space:]]+=/ {print $2; exit}' cmd/desktop/metadata.go)" >> "$GITHUB_OUTPUT"
+
+            - name: Generate Windows icon resource
+              if: runner.os == 'Windows'
+              working-directory: cmd/desktop
+              shell: bash
+              run: |
+                  versioninfo_args=(
+                    -skip-versioninfo
+                    -icon=../../assets/icons/icon.ico
+                    -o=resource_windows_${{ matrix.goarch }}.syso
+                  )
+                  if [ "${{ matrix.goarch }}" = "arm64" ]; then
+                    versioninfo_args+=(-64 -arm)
+                  else
+                    versioninfo_args+=(-64)
+                  fi
+                  go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.7.0 "${versioninfo_args[@]}"
+
+            - name: Build
+              env:
+                  GOOS: ${{ matrix.goos }}
+                  GOARCH: ${{ matrix.goarch }}
+                  CGO_ENABLED: 1
+                  MACOSX_DEPLOYMENT_TARGET: "10.14"
+                  APP_BUILD: ${{ steps.metadata.outputs.build }}
+                  APP_COMMIT: ${{ steps.metadata.outputs.commit }}
+                  APP_TIMESTAMP: ${{ steps.metadata.outputs.timestamp }}
+              shell: bash
+              run: |
+                  mkdir -p build
+                  ldflags="-s -X main.AppBuild=$APP_BUILD -X main.AppCommit=$APP_COMMIT -X main.AppTimestamp=$APP_TIMESTAMP"
+                  if [ "$RUNNER_OS" = "Windows" ]; then
+                    ldflags="$ldflags -H=windowsgui"
+                  fi
+
+                  go build \
+                    -trimpath \
+                    -buildvcs=false \
+                    -tags no_emoji \
+                    -ldflags="$ldflags" \
+                    -o build/${{ steps.vars.outputs.filename }} \
+                    ./cmd/desktop
+
+            - name: Package macOS app bundle
+              if: runner.os == 'macOS'
+              working-directory: .
+              shell: bash
+              run: |
+                  app_dir="build/yeet-${{ matrix.name }}.app"
+                  mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
+
+                  install -m 755 \
+                    "build/${{ steps.vars.outputs.filename }}" \
+                    "$app_dir/Contents/MacOS/puush"
+                  install -m 644 \
+                    assets/icons/icon.icns \
+                    "$app_dir/Contents/Resources/puush.icns"
+                  install -m 644 \
+                    assets/sounds/success.wav \
+                    "$app_dir/Contents/Resources/success.wav"
+
+                  cat > "$app_dir/Contents/Info.plist" <<'PLIST'
+                  <?xml version="1.0" encoding="UTF-8"?>
+                  <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+                  <plist version="1.0">
+                  <dict>
+                      <key>CFBundleDisplayName</key>
+                      <string>puush</string>
+                      <key>CFBundleExecutable</key>
+                      <string>puush</string>
+                      <key>CFBundleIconFile</key>
+                      <string>puush.icns</string>
+                      <key>CFBundleIdentifier</key>
+                      <string>ee.tupsujumal.yeet</string>
+                      <key>CFBundleInfoDictionaryVersion</key>
+                      <string>6.0</string>
+                      <key>CFBundleName</key>
+                      <string>puush</string>
+                  <key>CFBundlePackageType</key>
+                  <string>APPL</string>
+                  <key>CFBundleShortVersionString</key>
+                  <string>${{ steps.metadata.outputs.version }}</string>
+                      <key>CFBundleVersion</key>
+                      <string>${{ steps.metadata.outputs.build }}</string>
+                      <key>LSMinimumSystemVersion</key>
+                      <string>10.14</string>
+                      <key>NSHighResolutionCapable</key>
+                      <true/>
+                      <key>NSScreenCaptureUsageDescription</key>
+                      <string>puush needs Screen Recording access to capture screenshots.</string>
+                  </dict>
+                  </plist>
+                  PLIST
+
+                  plutil -lint "$app_dir/Contents/Info.plist"
+                  test -x "$app_dir/Contents/MacOS/puush"
+                  test -f "$app_dir/Contents/Resources/success.wav"
+                  test "$(plutil -extract CFBundleIdentifier raw -o - "$app_dir/Contents/Info.plist")" = "ee.tupsujumal.yeet"
+                  test -n "$(plutil -extract NSScreenCaptureUsageDescription raw -o - "$app_dir/Contents/Info.plist")"
+
+                  codesign --force --sign - --requirements '=designated => identifier "ee.tupsujumal.yeet"' --timestamp=none "$app_dir"
+                  codesign --verify --strict "$app_dir"
+
+                  ditto -c -k --sequesterRsrc --keepParent \
+                    "$app_dir" \
+                    "build/yeet-${{ matrix.name }}.app.zip"
+
+            - name: Upload Artifact
+              if: github.event_name != 'release'
+              uses: actions/upload-artifact@v7
+              with:
+                  name: yeet-${{ matrix.name }}
+                  path: build/${{ steps.vars.outputs.filename }}
+                  retention-days: 7
+
+            - name: Upload macOS app artifact
+              if: github.event_name != 'release' && runner.os == 'macOS'
+              uses: actions/upload-artifact@v7
+              with:
+                  name: yeet-${{ matrix.name }}-app
+                  path: build/yeet-${{ matrix.name }}.app.zip
+                  retention-days: 7
+
+            - name: Upload Release Asset
+              if: github.event_name == 'release'
+              uses: softprops/action-gh-release@v3
+              with:
+                  files: build/${{ steps.vars.outputs.filename }}
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Upload macOS app release asset
+              if: github.event_name == 'release' && runner.os == 'macOS'
+              uses: softprops/action-gh-release@v3
+              with:
+                  files: build/yeet-${{ matrix.name }}.app.zip
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
