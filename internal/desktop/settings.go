@@ -10,6 +10,7 @@ import (
 const (
 	tabHome = iota
 	tabUploads
+	tabQueue
 	tabGeneral
 	tabKeyBindings
 	tabAccount
@@ -18,6 +19,11 @@ const (
 // ShowAppWindow opens the app window on its home page.
 func (ui *UI) ShowAppWindow() {
 	ui.showWindow(tabHome)
+}
+
+// ShowQueueWindow opens the app window on the upload queue.
+func (ui *UI) ShowQueueWindow() {
+	ui.showWindow(tabQueue)
 }
 
 // ShowSettingsWindow opens the app window on the settings.
@@ -39,9 +45,10 @@ func (ui *UI) showWindow(tab int) {
 		ui.windowTabs = nil
 		ui.refreshHome = nil
 		ui.uploads = nil
+		ui.queue = nil
 		ui.SetUpdateFinishedCallback(nil)
 	})
-	w.Resize(fyne.NewSize(660, 480))
+	w.Resize(fyne.NewSize(740, 500))
 	w.SetIcon(puushIcon)
 	ui.settingsWindow = w
 
@@ -51,6 +58,7 @@ func (ui *UI) showWindow(tab int) {
 	accountView, accountViewUpdate := ui.buildAccountTab()
 	homeView, homeRefresh := ui.buildHomeTab(w, goToAccount)
 	uploadsView := ui.buildUploadsTab(w)
+	queueView := ui.buildQueueTab()
 	generalView := ui.buildGeneralTab()
 	keyBindingsView := ui.buildKeyBindingsTab()
 	advancedView := ui.buildAdvancedTab(accountViewUpdate)
@@ -60,6 +68,7 @@ func (ui *UI) showWindow(tab int) {
 	tabs = container.NewAppTabs(
 		container.NewTabItem("Home", homeView),
 		container.NewTabItem("Uploads", uploadsView.content),
+		container.NewTabItem("Queue", queueView.content),
 		container.NewTabItem("General", generalView),
 		container.NewTabItem("Key Bindings", keyBindingsView),
 		container.NewTabItem("Account", accountView),
@@ -81,6 +90,7 @@ func (ui *UI) showWindow(tab int) {
 		}
 	}
 	ui.uploads = uploadsView
+	ui.queue = queueView
 
 	tabs.SelectIndex(tab)
 	if tab == tabUploads {

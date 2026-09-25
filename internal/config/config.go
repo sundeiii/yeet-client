@@ -77,6 +77,12 @@ type GeneralConfig struct {
 	UploadPoolId int
 	// Albums: several files uploaded at once share one album link
 	Albums bool
+	// Sound after an upload: puush, pop, chime, system or none
+	Sound string
+	// NotifySuccess shows a notification after each upload (errors always show)
+	NotifySuccess bool
+	// NotifyPreview shows the uploaded picture in the notification
+	NotifyPreview bool
 }
 
 type CaptureConfig struct {
@@ -168,6 +174,10 @@ var oldServerURLs = []string{"https://p.tupsujumal.ee", "https://p.tupsujumal.ee
 
 // migrate updates settings saved by older versions.
 func (cfg *Config) migrate() {
+	// The sound used to be a switch
+	if !cfg.General.NotificationSound && cfg.General.Sound == "puush" {
+		cfg.General.Sound = "none"
+	}
 	for _, old := range oldServerURLs {
 		if cfg.Misc.ServerURL == old {
 			cfg.Misc.ServerURL = DefaultServerURL
@@ -187,6 +197,9 @@ func DefaultConfig() *Config {
 			DisabledToggle:    false,
 			AutoUpdate:        true,
 			Albums:            true,
+			Sound:             "puush",
+			NotifySuccess:     true,
+			NotifyPreview:     true,
 		},
 		Capture: CaptureConfig{
 			UploadQuality:         screenshots.QualityBest,

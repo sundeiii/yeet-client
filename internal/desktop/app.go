@@ -35,6 +35,7 @@ type UI struct {
 	windowTabs  *container.AppTabs
 	refreshHome func()
 	uploads     *uploadsView
+	queue       *queueView
 
 	requestUpdateCheck  func(branch *updater.Branch) bool
 	updateCheckFinished func(time.Time)
@@ -74,6 +75,12 @@ func (ui *UI) Run() {
 		ui.tray.SetSettingsCallback(ui.ShowSettingsWindow)
 		ui.tray.SetOpenCallback(ui.ShowAppWindow)
 		ui.tray.OnChange(ui.onTrayChange)
+		ui.tray.SetQueueCallback(ui.ShowQueueWindow)
+		ui.tray.OnQueueChange(func() {
+			if ui.queue != nil {
+				ui.queue.refresh()
+			}
+		})
 		ui.tray.StartUploadQueue()
 		ui.tray.StartHistoryRefresh()
 		ui.startIPC()

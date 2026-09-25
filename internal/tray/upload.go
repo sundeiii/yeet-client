@@ -84,22 +84,28 @@ func (m *TrayManager) runUpload(job *uploadJob) (string, error) {
 
 	job.Attempts++
 	log.Printf("Starting upload: %s (attempt %d)", job.Name, job.Attempts)
+	m.track(job, func(entry *QueueEntry) {
+		entry.Status = QueueUploading
+		entry.Size = size
+		entry.Progress = 0
+	})
 
-	progress := puush.NewProgressReader(reader, size, m.progressReporter(job.Name, size))
+	progress := puush.NewProgressReader(reader, size, m.progressReporter(job, size))
 	options := puush.UploadOptions{PoolId: m.config.General.UploadPoolId, Size: size}
 	return m.api.UploadWithOptions(ctx, progress, job.Name, options)
 }
 
 // progressReporter shows the upload's progress in the tray icon and tooltip,
 // only redrawing when the whole percentage changes.
-func (m *TrayManager) progressReporter(name string, size int64) func(float64) {
+func (m *TrayManager) progressReporter(job *uploadJob, size int64) func(float64) {
 	last := -1
 	return func(percentage float64) {
 		if int(percentage) == last {
 			return
 		}
 		last = int(percentage)
-		m.OnTrayProgressUpdate(percentage, fmt.Sprintf("puush: uploading %s (%d%% of %s)", name, last, humanSize(size)))
+		m.OnTrayProgressUpdate(percentage, fmt.Sprintf("puush: uploading %s (%d%% of %s)", job.Name, last, humanSize(size)))
+		m.track(job, func(entry *QueueEntry) { entry.Progress = percentage })
 	}
 }
 
@@ -146,11 +152,17 @@ func (m *TrayManager) processBatch(jobs []*uploadJob) {
 			m.OnTrayProgressComplete()
 			m.forgetFailed(job)
 			m.config.Capture.RememberLocalCopy(link, job.LocalCopy)
+			m.track(job, func(entry *QueueEntry) {
+				entry.Status = QueueDone
+				entry.Link = link
+				entry.Progress = 100
+			})
 			done = append(done, job)
 			links = append(links, link)
 		case errors.Is(err, context.Canceled):
 			log.Println("Upload cancelled:", job.Name)
 			fyne.Do(m.ResetTrayIcon)
+			m.track(job, func(entry *QueueEntry) { entry.Status = QueueCancelled })
 			m.ShowNotification("Upload cancelled", job.Name)
 		default:
 			m.onUploadFailed(job, err)
@@ -163,7 +175,7 @@ func (m *TrayManager) processBatch(jobs []*uploadJob) {
 	m.config.Account.Usage = m.api.Account.DiskUsage
 
 	if len(links) == 1 {
-		m.onLinkReady(links[0], done[0].PreserveClipboard)
+		m.onLinkReady(links[0], done[0].PreserveClipboard, previewIcon(done[0]))
 	} else {
 		m.onLinksReady(links)
 	}
@@ -172,8 +184,8 @@ func (m *TrayManager) processBatch(jobs []*uploadJob) {
 	go m.RefreshHistory()
 }
 
-func (m *TrayManager) onLinkReady(link string, preserveClipboard bool) {
-	m.ShowUploadNotification(link)
+func (m *TrayManager) onLinkReady(link string, preserveClipboard bool, preview []byte) {
+	m.ShowUploadNotification(link, preview)
 
 	if m.config.General.CopyToClipboard && !preserveClipboard {
 		fyne.Do(func() { fyne.CurrentApp().Clipboard().SetContent(link) })
@@ -192,7 +204,7 @@ func (m *TrayManager) onLinksReady(links []string) {
 	if m.config.General.Albums {
 		album, err := m.api.CreateAlbum(links, "")
 		if err == nil {
-			m.onLinkReady(album, false)
+			m.onLinkReady(album, false, nil)
 			return
 		}
 		log.Printf("Could not make an album: %v", err)
@@ -212,6 +224,10 @@ func (m *TrayManager) onLinksReady(links []string) {
 func (m *TrayManager) onUploadFailed(job *uploadJob, err error) {
 	log.Printf("Upload of %s failed: %v", job.Name, err)
 	m.OnTrayProgressFail()
+	m.track(job, func(entry *QueueEntry) {
+		entry.Status = QueueFailed
+		entry.Error = puush.FormatError(err)
+	})
 
 	if errors.Is(err, fs.ErrNotExist) {
 		m.ShowErrorNotification(fmt.Sprintf("%s could not be uploaded because it no longer exists.", job.Name))

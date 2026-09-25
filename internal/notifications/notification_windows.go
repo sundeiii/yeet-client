@@ -12,6 +12,9 @@ import (
 
 func (n *Notification) Push() error {
 	note := notification(n.Application, n.Title, n.Text, n.iconPath, n.actionUrl)
+	if n.silent {
+		note.Audio = toast.Silent
+	}
 	return note.Push()
 }
 

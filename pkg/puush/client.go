@@ -87,6 +87,10 @@ func (c *Client) EvaluateResponse(response *http.Response) (*bufio.Scanner, Puus
 			return nil, PuushErrorChecksumFailure
 		case -4:
 			return nil, PuushErrorInsufficientStorage
+		case -5:
+			return nil, PuushErrorTwoFactorRequired
+		case -6:
+			return nil, PuushErrorTwoFactorWrong
 		default:
 			return nil, PuushErrorUnknown
 		}

@@ -16,6 +16,9 @@ type Credentials struct {
 	Identifier *string
 	Password   *string
 	Key        *string
+
+	// TwoFactorCode is the authenticator app's code, for accounts that need one
+	TwoFactorCode *string
 }
 
 func (c *Credentials) HasApiKey() bool {
@@ -44,6 +47,9 @@ func (c *Credentials) toFormData() url.Values {
 	} else if c.HasLoginCredentials() {
 		params.Add("e", *c.Identifier)
 		params.Add("p", *c.Password)
+		if c.TwoFactorCode != nil {
+			params.Add("c", *c.TwoFactorCode)
+		}
 	}
 	return params
 }

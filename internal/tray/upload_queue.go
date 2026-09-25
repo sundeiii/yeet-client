@@ -113,6 +113,13 @@ func (m *TrayManager) enqueue(batch uploadBatch) error {
 
 	select {
 	case m.uploadQueue <- batch:
+		for _, job := range batch.jobs {
+			m.track(job, func(entry *QueueEntry) {
+				entry.Status = QueueWaiting
+				entry.Error = ""
+				entry.Progress = 0
+			})
+		}
 		return nil
 	case <-m.uploadQueueStop:
 		return ErrUploadQueueStopped

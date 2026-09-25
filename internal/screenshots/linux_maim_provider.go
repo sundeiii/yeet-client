@@ -5,6 +5,7 @@ package screenshots
 import (
 	"bytes"
 	"fmt"
+	"image"
 	"io"
 	"os/exec"
 )
@@ -13,6 +14,7 @@ type MaimScreenshotProvider struct {
 	binPath        string
 	fullscreenMode FullscreenMode
 	quality        Quality
+	lastArea       image.Rectangle
 }
 
 func NewMaimProvider() (ScreenshotProvider, error) {
@@ -55,6 +57,13 @@ func (p *MaimScreenshotProvider) CaptureScreen() (io.ReadSeekCloser, error) {
 
 // CaptureArea captures a specific region of the screen
 func (p *MaimScreenshotProvider) CaptureArea() (io.ReadSeekCloser, error) {
+	// With slop, the area is known afterwards for "Capture Last Area"
+	if area, used, err := p.selectWithSlop(); used {
+		if err != nil {
+			return nil, err
+		}
+		return p.CaptureRegion(area)
+	}
 	// -s enables interactive selection mode
 	return p.performCapture("-s", "-f", "png")
 }

@@ -9,6 +9,10 @@ var (
 	PuushErrorInsufficientStorage PuushError = NewPuushError("Insufficient storage", -4, false)
 	PuushErrorUploadTooLarge      PuushError = NewPuushError("Upload too large", -997, false)
 
+	// Accounts with two-factor login need a code from the authenticator app
+	PuushErrorTwoFactorRequired PuushError = NewPuushError("Two-factor code required", -5, false)
+	PuushErrorTwoFactorWrong    PuushError = NewPuushError("Wrong two-factor code", -6, false)
+
 	/* Custom internal errors */
 	PuushErrorNotFound PuushError = NewPuushError("Not found", -998, false)
 	PuushErrorUnknown  PuushError = NewPuushError("Unknown error", -999, false)
@@ -68,6 +72,10 @@ func FormatError(err error) string {
 		return "Insufficient account storage remaining. Please delete some files or consider upgrading to a pro account!"
 	case PuushErrorUploadTooLarge:
 		return "The selected file is too large for this server."
+	case PuushErrorTwoFactorRequired:
+		return "This account needs the code from your authenticator app."
+	case PuushErrorTwoFactorWrong:
+		return "That code didn't work. Codes change every 30 seconds, so try the one showing now."
 	default:
 		return "An unexpected error occured. Please try again!"
 	}

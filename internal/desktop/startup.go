@@ -116,8 +116,10 @@ func (ui *UI) ShowStartupWindow() {
 		ui.api.SetBaseURL(serverUrl.String())
 
 		// Attempt authentication with new credentials
-		if err := ui.api.Authenticate(); err != nil {
-			showError(err)
+		if err := ui.authenticateWithTwoFactor(); err != nil {
+			if err != errLoginCancelled {
+				showError(err)
+			}
 			return
 		}
 

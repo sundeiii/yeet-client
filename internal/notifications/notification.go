@@ -10,6 +10,14 @@ type Notification struct {
 	iconPath  string
 	soundPath string
 	actionUrl string
+	silent    bool
+}
+
+// Silent keeps the system from playing its own notification sound, e.g.
+// because the app plays one itself.
+func (n *Notification) Silent() *Notification {
+	n.silent = true
+	return n
 }
 
 func NewNotification(appName string, title string, text string) *Notification {

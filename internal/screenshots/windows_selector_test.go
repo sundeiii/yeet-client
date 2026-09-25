@@ -90,3 +90,36 @@ func TestAreaSelectionImage(t *testing.T) {
 		t.Error("the selected area should come from the right place")
 	}
 }
+
+func TestSelectorHighlightsWindowUnderCursor(t *testing.T) {
+	img := renderForTest(t, func(state *selectionState) {
+		state.targets = []rect{{Left: -350, Top: 50, Right: -50, Bottom: 250}, {Left: -400, Top: 0, Right: 400, Bottom: 500}}
+		state.cursor = point{-200, 150}
+		state.hover, state.hasHover = targetAt(state.targets, state.cursor)
+	})
+	// Inside the hovered window the screen is at full brightness
+	if inside := img.NRGBAAt(-330+400, 240); inside.G != 240 {
+		t.Errorf("the hovered window should be bright, got %v", inside)
+	}
+	// Outside it's dimmed
+	if outside := img.NRGBAAt(350+400, 400); outside.G > 200/2 {
+		t.Errorf("outside the window should be dimmed, got %v", outside)
+	}
+}
+
+func TestClickTargets(t *testing.T) {
+	targets := []rect{{Left: 10, Top: 10, Right: 50, Bottom: 50}, {Left: 0, Top: 0, Right: 100, Bottom: 100}}
+	if r, ok := targetAt(targets, point{20, 20}); !ok || r.Right != 50 {
+		t.Error("the frontmost window under the point should win")
+	}
+	if r, ok := targetAt(targets, point{70, 70}); !ok || r.Right != 100 {
+		t.Error("outside windows, the screen should be picked")
+	}
+	if _, ok := targetAt(targets, point{200, 200}); ok {
+		t.Error("nothing is there")
+	}
+	// The real list has at least this computer's screen
+	if len(clickTargets()) == 0 {
+		t.Error("expected at least one window or screen")
+	}
+}

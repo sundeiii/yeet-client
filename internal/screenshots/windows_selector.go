@@ -20,8 +20,9 @@ var ErrAreaSelectionCancelled = errors.New("area selection cancelled")
 // selecting is exactly what gets uploaded, and menus or tooltips that close
 // once the selector takes focus are still in the picture.
 //
-// Controls: drag to select, hold Shift for a square, hold Space while
-// dragging to move the selection, Escape or right-click to cancel.
+// Controls: drag to select, or click to take the window (or screen) under
+// the cursor; hold Shift for a square, hold Space while dragging to move the
+// selection, Escape or right-click to cancel.
 
 const (
 	selectorWindowClass = "PuushAreaSelector"
@@ -66,6 +67,13 @@ type selectionState struct {
 	height   int
 
 	frozen *frozenScreen
+
+	// Windows and screens that a click selects, frontmost first
+	targets     []rect
+	hover       rect
+	hasHover    bool
+	clickTarget rect
+	hasClick    bool
 
 	cursor   point
 	dragging bool
@@ -224,8 +232,11 @@ func selectArea() (areaSelection, error) {
 		width:    width,
 		height:   height,
 		frozen:   frozen,
+		// Listed before the selector's own window covers everything
+		targets: clickTargets(),
 	}
 	state.cursor, _ = getCursorPosition()
+	state.hover, state.hasHover = targetAt(state.targets, state.cursor)
 
 	hwnd, err := createSelectorWindow(virtualX, virtualY, width, height)
 	if err != nil {
@@ -410,6 +421,7 @@ func selectorWindowProc(
 		state.start = pt
 		state.current = pt
 		state.cursor = pt
+		state.clickTarget, state.hasClick = targetAt(state.targets, pt)
 
 		procSetCapture.Call(hwnd)
 		invalidateRect(hwnd, false)
@@ -432,6 +444,8 @@ func selectorWindowProc(
 			state.moveFrom = pt
 		} else if state.dragging {
 			state.current = pt
+		} else {
+			state.hover, state.hasHover = targetAt(state.targets, pt)
 		}
 		state.cursor = pt
 		invalidateRect(hwnd, false)
@@ -527,13 +541,15 @@ func renderSelector(state *selectionState) {
 			labelY = top + 4
 		}
 		drawLabel(back, f, label, left, labelY)
-	} else {
-		// Guide lines through the cursor help line up the first corner
-		if oldPen, err := selectObject(back, f.guidePen); err == nil {
-			setBkMode(back, transparent)
-			drawLine(back, 0, cursorY, f.width, cursorY)
-			drawLine(back, cursorX, 0, cursorX, f.height)
-			selectObject(back, oldPen)
+	} else if state.hasHover {
+		// The window under the cursor lights up: a click takes it
+		hover := clipRect(state.hover, state.virtualX, state.virtualY, f.width, f.height)
+		left, top := int(hover.Left), int(hover.Top)
+		width, height := int(hover.Right-hover.Left), int(hover.Bottom-hover.Top)
+		if width > 0 && height > 0 {
+			bitBlt(back, left, top, width, height, f.brightDC, left, top, srccopy)
+			drawRectangle(back, f.selectionPen, left, top, left+width, top+height)
+			drawLabel(back, f, fmt.Sprintf("%d × %d  ·  click to capture", width, height), left+4, top+4)
 		}
 	}
 
@@ -617,6 +633,10 @@ func finalizeSelection(state *selectionState) {
 	}
 
 	selection := state.selection()
+	// A click (hardly any drag) takes the window or screen under the cursor
+	if selection.Right-selection.Left < 4 && selection.Bottom-selection.Top < 4 && state.hasClick {
+		selection = state.clickTarget
+	}
 	if selection.Right <= selection.Left || selection.Bottom <= selection.Top {
 		cancelSelection(state)
 		return
@@ -672,4 +692,18 @@ func sign32(v int32) int32 {
 		return -1
 	}
 	return 1
+}
+
+// clipRect turns a screen rectangle into selector coordinates, cut to the
+// selector's size.
+func clipRect(r rect, virtualX, virtualY, width, height int) rect {
+	r.Left -= int32(virtualX)
+	r.Right -= int32(virtualX)
+	r.Top -= int32(virtualY)
+	r.Bottom -= int32(virtualY)
+	r.Left = max(r.Left, 0)
+	r.Top = max(r.Top, 0)
+	r.Right = min(r.Right, int32(width))
+	r.Bottom = min(r.Bottom, int32(height))
+	return r
 }

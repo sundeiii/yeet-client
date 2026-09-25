@@ -5,17 +5,47 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/sqweek/dialog"
 	"github.com/sundeiii/yeet-client/internal/config"
+	"github.com/sundeiii/yeet-client/internal/notifications"
 )
 
 func (ui *UI) buildGeneralTab() fyne.CanvasObject {
 	startupCheckbox := widget.NewCheck("Start puush on startup", ui.UpdateAutostartConfiguration)
 	startupCheckbox.Checked = ui.config.General.Startup
 
-	soundCheckbox := widget.NewCheck("Play a notification sound", func(b bool) { ui.config.General.NotificationSound = b })
-	soundCheckbox.Checked = ui.config.General.NotificationSound
+	// Sound after an upload, with a button to hear it
+	soundNames := map[string]string{
+		notifications.SoundPuush:  "puush (classic)",
+		notifications.SoundPop:    "Pop",
+		notifications.SoundChime:  "Chime",
+		notifications.SoundSystem: "System sound",
+		notifications.SoundNone:   "No sound",
+	}
+	var soundLabels []string
+	for _, name := range notifications.SoundChoices {
+		soundLabels = append(soundLabels, soundNames[name])
+	}
+	soundSelect := widget.NewSelect(soundLabels, func(label string) {
+		for name, l := range soundNames {
+			if l == label {
+				ui.config.General.Sound = name
+				ui.config.General.NotificationSound = name != notifications.SoundNone
+			}
+		}
+	})
+	soundSelect.SetSelected(soundNames[ui.config.General.Sound])
+	playButton := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
+		notifications.PlaySound(ui.config.General.Sound)
+	})
+	soundCheckbox := container.NewBorder(nil, nil, widget.NewLabel("Sound:"), playButton, soundSelect)
+
+	notifyCheckbox := widget.NewCheck("Show a notification after each upload", func(b bool) { ui.config.General.NotifySuccess = b })
+	notifyCheckbox.Checked = ui.config.General.NotifySuccess
+	previewCheckbox := widget.NewCheck("Show the picture in the notification", func(b bool) { ui.config.General.NotifyPreview = b })
+	previewCheckbox.Checked = ui.config.General.NotifyPreview
 
 	copyLinkCheckbox := widget.NewCheck("Copy link to clipboard", func(b bool) { ui.config.General.CopyToClipboard = b })
 	copyLinkCheckbox.Checked = ui.config.General.CopyToClipboard
@@ -44,7 +74,7 @@ func (ui *UI) buildGeneralTab() fyne.CanvasObject {
 	})
 	saveLocalPathContainer := container.NewBorder(nil, nil, nil, browseButton, savePathEntry)
 
-	onSuccessLeft := container.NewVBox(soundCheckbox, copyLinkCheckbox, openBrowserCheckbox)
+	onSuccessLeft := container.NewVBox(soundCheckbox, notifyCheckbox, previewCheckbox, copyLinkCheckbox, openBrowserCheckbox)
 	onSuccessRight := container.NewVBox(saveClipboardCheckbox, saveLocalCheckbox, saveLocalPathContainer)
 
 	onSuccessGrid := container.NewGridWithColumns(2, onSuccessLeft, onSuccessRight)

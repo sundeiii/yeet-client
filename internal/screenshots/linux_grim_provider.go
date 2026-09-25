@@ -5,6 +5,7 @@ package screenshots
 import (
 	"bytes"
 	"fmt"
+	"image"
 	"io"
 	"os/exec"
 	"strings"
@@ -15,6 +16,7 @@ type GrimScreenshotProvider struct {
 	slurpPath      string
 	fullscreenMode FullscreenMode
 	quality        Quality
+	lastArea       image.Rectangle
 }
 
 func NewGrimProvider() (ScreenshotProvider, error) {
@@ -83,6 +85,9 @@ func (p *GrimScreenshotProvider) captureWithSlurp() (io.ReadSeekCloser, error) {
 	geom := strings.TrimSpace(string(slurpOut))
 	if geom == "" {
 		return nil, fmt.Errorf("screenshot was cancelled or empty region selected")
+	}
+	if area, ok := parseGeometry(geom); ok {
+		p.lastArea = area
 	}
 
 	return p.performCapture("-g", geom, "-")

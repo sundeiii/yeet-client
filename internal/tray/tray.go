@@ -30,6 +30,7 @@ type TrayManager struct {
 	targetApp        fyne.App
 	settingsCallback func()
 	openCallback     func()
+	queueCallback    func()
 
 	watcher *fsnotify.Watcher
 
@@ -45,6 +46,10 @@ type TrayManager struct {
 	failed       []*uploadJob
 	pools        []*puush.Pool
 	listeners    []func()
+
+	queue          []*QueueEntry
+	queueSeq       int
+	queueListeners []func()
 
 	pendingDir   string
 	countingDown atomic.Bool
@@ -71,6 +76,11 @@ func (m *TrayManager) SetSettingsCallback(callback func()) {
 // SetOpenCallback sets the function that opens the app's window, for "Open puush".
 func (m *TrayManager) SetOpenCallback(callback func()) {
 	m.openCallback = callback
+}
+
+// SetQueueCallback sets the function that opens the upload queue window.
+func (m *TrayManager) SetQueueCallback(callback func()) {
+	m.queueCallback = callback
 }
 
 // OnChange registers a function that's called (on the main thread) when
@@ -137,17 +147,28 @@ func (m *TrayManager) ShowNotification(title, message string) {
 		Push()
 }
 
-// ShowUploadNotification will display a notification indicating that an upload was successful
-func (m *TrayManager) ShowUploadNotification(url string) {
-	notification := notifications.NewNotification("puush complete!", "", url).
-		WithIconData(assets.PuushIconData).
-		WithAction(url)
-
-	if m.config.General.NotificationSound {
-		notification = notification.WithSoundData(assets.SuccessSoundData)
+// ShowUploadNotification tells the user an upload is done, with a sound and
+// a notification as the settings say. preview is a picture of the upload for
+// the notification, if there is one.
+func (m *TrayManager) ShowUploadNotification(url string, preview []byte) {
+	sound := m.config.General.Sound
+	if m.config.General.NotifySuccess {
+		icon := assets.PuushIconData
+		if m.config.General.NotifyPreview && len(preview) > 0 {
+			icon = preview
+		}
+		notification := notifications.NewNotification("puush complete!", "", url).
+			WithIconData(icon).
+			WithAction(url)
+		// The app plays its own sound (or none); only "system" leaves it to the system
+		if sound != notifications.SoundSystem {
+			notification = notification.Silent()
+		}
+		notification.Push()
 	}
-
-	notification.Push()
+	if sound != notifications.SoundSystem && sound != notifications.SoundNone {
+		notifications.PlaySound(sound)
+	}
 }
 
 // ShowErrorNotification will display an error notification with the provided message
@@ -305,6 +326,12 @@ func (m *TrayManager) rebuildMenuItems() {
 	})
 	uploadClipboard.Icon = clipboardIcon
 
+	queueWindow := fyne.NewMenuItem("Upload Queue...", func() {
+		if m.queueCallback != nil {
+			m.queueCallback()
+		}
+	})
+
 	disablePuushing := fyne.NewMenuItem("Disable puushing", m.TogglePuushing)
 	disablePuushing.Checked = m.config.General.DisabledToggle
 
@@ -323,6 +350,7 @@ func (m *TrayManager) rebuildMenuItems() {
 		delayed,
 		uploadClipboard,
 		uploadFile,
+		queueWindow,
 		fyne.NewMenuItemSeparator(),
 	)
 	if pools := m.buildPoolMenu(); pools != nil {

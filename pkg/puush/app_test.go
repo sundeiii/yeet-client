@@ -178,3 +178,35 @@ func TestChunkedUpload(t *testing.T) {
 		t.Errorf("server got %d bytes (retried: %v)", received.Len(), failedOnce)
 	}
 }
+
+func TestTwoFactorLogin(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		switch r.FormValue("c") {
+		case "":
+			w.WriteHeader(http.StatusUnauthorized)
+			io.WriteString(w, "-5")
+		case "123456":
+			io.WriteString(w, "1,thekey,,42")
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+			io.WriteString(w, "-6")
+		}
+	})
+	email, password := "me@example.com", "hunter22"
+	client.Account.Credentials = &Credentials{Identifier: &email, Password: &password}
+
+	if err := client.Authenticate(); err != PuushErrorTwoFactorRequired {
+		t.Fatalf("expected a code to be asked for, got %v", err)
+	}
+	wrong := "000000"
+	client.Account.Credentials.TwoFactorCode = &wrong
+	if err := client.Authenticate(); err != PuushErrorTwoFactorWrong {
+		t.Fatalf("expected a wrong code error, got %v", err)
+	}
+	right := "123456"
+	client.Account.Credentials.TwoFactorCode = &right
+	if err := client.Authenticate(); err != nil || *client.Account.Credentials.Key != "thekey" {
+		t.Fatalf("login with the code: %v", err)
+	}
+}
