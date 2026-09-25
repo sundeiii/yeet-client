@@ -11,7 +11,7 @@ import (
 const (
 	AppName     = "puush"
 	AppID       = "ee.tupsujumal.yeet"
-	AppVersion  = "1.1.0"
+	AppVersion  = "1.1.1"
 	AppIconName = "puush.png"
 )
 
