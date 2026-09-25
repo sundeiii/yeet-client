@@ -5,6 +5,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	"github.com/sqweek/dialog"
+	"github.com/sundeiii/yeet-client/internal/config"
 )
 
 func (ui *UI) buildGeneralTab() fyne.CanvasObject {
@@ -28,10 +29,12 @@ func (ui *UI) buildGeneralTab() fyne.CanvasObject {
 
 	savePathEntry := widget.NewEntry()
 	savePathEntry.SetText(ui.config.Capture.SaveImagePath)
+	// An empty box means the default folder, so show where that is
+	savePathEntry.SetPlaceHolder(config.DefaultSaveImagePath())
 	savePathEntry.OnChanged = func(s string) { ui.config.Capture.SaveImagePath = s }
 
 	browseButton := widget.NewButton("...", func() {
-		path, err := dialog.Directory().Title("Select a file to upload").Browse()
+		path, err := dialog.Directory().Title("Choose where to save screenshots").Browse()
 		if err == nil {
 			savePathEntry.SetText(path)
 			ui.config.Capture.SaveImagePath = path

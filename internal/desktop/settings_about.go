@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"net/url"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -8,6 +9,8 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
+
+var projectURL, _ = url.Parse("https://github.com/sundeiii/yeet-client")
 
 func (ui *UI) buildAboutTab() fyne.CanvasObject {
 	metadata := ui.app.Metadata()
@@ -44,6 +47,10 @@ func (ui *UI) buildAboutTab() fyne.CanvasObject {
 			widget.NewFormItem(
 				"Commit",
 				readOnlyEntry(metadata.Custom["commit"]),
+			),
+			widget.NewFormItem(
+				"Source",
+				widget.NewHyperlink("github.com/sundeiii/yeet-client", projectURL),
 			),
 		),
 	)

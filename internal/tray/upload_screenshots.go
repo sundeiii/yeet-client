@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -78,9 +79,9 @@ func (m *TrayManager) OnScreenshotCaptured(reader io.ReadSeeker, filename string
 		reader.Seek(0, io.SeekStart)
 		m.CopyScreenshotToClipboard(reader)
 	}
-	if m.config.Capture.SaveImages && m.config.Capture.SaveImagePath != "" {
+	if m.config.Capture.SaveImages {
 		reader.Seek(0, io.SeekStart)
-		m.SaveScreenshotToDisk(reader, filename, m.config.Capture.SaveImagePath)
+		m.SaveScreenshotToDisk(reader, filename, m.config.Capture.ImageSavePath())
 	}
 	reader.Seek(0, io.SeekStart)
 }
@@ -95,11 +96,16 @@ func (m *TrayManager) CopyScreenshotToClipboard(reader io.ReadSeeker) {
 }
 
 func (m *TrayManager) SaveScreenshotToDisk(reader io.ReadSeeker, filename string, path string) string {
-	if !strings.HasSuffix(path, "/") {
-		path += "/"
+	if path == "" {
+		log.Printf("No folder to save screenshots to")
+		return ""
+	}
+	if err := os.MkdirAll(path, 0755); err != nil {
+		log.Printf("Error creating screenshot folder %s: %v", path, err)
+		return ""
 	}
 
-	outputPath := path + filename
+	outputPath := filepath.Join(path, filename)
 	outFile, err := os.Create(outputPath)
 	if err != nil {
 		log.Printf("Error creating file for saving screenshot: %v", err)

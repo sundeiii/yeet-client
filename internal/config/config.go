@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/sundeiii/yeet-client/internal/screenshots"
@@ -167,4 +169,27 @@ func formatBytes(bytes int64) string {
 
 	units := []string{"KB", "MB", "GB", "TB", "PB", "EB"}
 	return fmt.Sprintf("%.2f%s", float64(bytes)/float64(div), units[exp])
+}
+
+// DefaultSaveImagePath is where local copies of screenshots go when no folder
+// was picked: a "yeet" folder inside the user's Pictures folder.
+func DefaultSaveImagePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	pictures := filepath.Join(home, "Pictures")
+	// Linux desktops can move the Pictures folder, e.g. when not in English
+	if dir := os.Getenv("XDG_PICTURES_DIR"); dir != "" {
+		pictures = dir
+	}
+	return filepath.Join(pictures, "yeet")
+}
+
+// ImageSavePath is the folder local copies are saved to.
+func (capture *CaptureConfig) ImageSavePath() string {
+	if capture.SaveImagePath != "" {
+		return capture.SaveImagePath
+	}
+	return DefaultSaveImagePath()
 }

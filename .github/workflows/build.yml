@@ -6,7 +6,7 @@ on:
     pull_request:
         branches: ["*"]
     release:
-        types: [published, created]
+        types: [published]
 
 # Needed to attach the built apps to releases
 permissions:
