@@ -83,6 +83,8 @@ type GeneralConfig struct {
 	NotifySuccess bool
 	// NotifyPreview shows the uploaded picture in the notification
 	NotifyPreview bool
+	// Language of the app (en, nl, de); empty follows the system
+	Language string
 }
 
 type CaptureConfig struct {

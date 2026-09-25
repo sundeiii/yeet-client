@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"github.com/sundeiii/yeet-client/pkg/puush"
 )
 
@@ -36,8 +37,7 @@ func (ui *UI) buildAccountTab() (fyne.CanvasObject, func()) {
 }
 
 func (ui *UI) buildAccountSetup(updateView func()) fyne.CanvasObject {
-	infoText := "You need to login before you can make full use of puush. "
-	infoText += "If you don't already have an account, you can register for free via the link below."
+	infoText := i18n.T("You need to login before you can make full use of puush. If you don't already have an account, you can register for free via the link below.")
 	infoLabel := widget.NewLabel(infoText)
 	infoLabel.Wrapping = fyne.TextWrapWord
 
@@ -47,8 +47,8 @@ func (ui *UI) buildAccountSetup(updateView func()) fyne.CanvasObject {
 
 	emailEntry := widget.NewEntry()
 	passwordEntry := widget.NewPasswordEntry()
-	emailLabel := trailingLabel("Email:")
-	passwordLabel := trailingLabel("Password:")
+	emailLabel := trailingLabel(i18n.T("Email:"))
+	passwordLabel := trailingLabel(i18n.T("Password:"))
 
 	form := container.NewGridWithColumns(2,
 		emailLabel, emailEntry,
@@ -57,8 +57,8 @@ func (ui *UI) buildAccountSetup(updateView func()) fyne.CanvasObject {
 
 	forgotURL, _ := url.Parse(resetUrl)
 	registerURL, _ := url.Parse(registerUrl)
-	forgotLink := NewUnderlinedLink("Forgotten Password?", forgotURL)
-	registerLink := NewUnderlinedLink("Sign up for free account...", registerURL)
+	forgotLink := NewUnderlinedLink(i18n.T("Forgotten Password?"), forgotURL)
+	registerLink := NewUnderlinedLink(i18n.T("Sign up for free account..."), registerURL)
 	linksContainer := container.NewHBox(forgotLink, layout.NewSpacer(), registerLink)
 
 	var loginButton *BorderedButton
@@ -94,7 +94,7 @@ func (ui *UI) buildAccountSetup(updateView func()) fyne.CanvasObject {
 		defer ui.UpdateAccountConfiguration()
 		defer fyne.Do(updateView)
 	}
-	loginButton = NewBorderedButton("Login", func() { go performLogin() })
+	loginButton = NewBorderedButton(i18n.T("Login"), func() { go performLogin() })
 
 	sizedForm := container.NewGridWrap(fyne.NewSize(350, 55), form)
 	sizedLoginButton := container.NewGridWrap(fyne.NewSize(140, 53), loginButton)
@@ -113,33 +113,33 @@ func (ui *UI) buildAccountSetup(updateView func()) fyne.CanvasObject {
 		linksContainer,
 	)
 
-	return createGroup("Account Setup", content)
+	return createGroup(i18n.T("Account Setup"), content)
 }
 
 func (ui *UI) buildAccountDetails(updateView func()) fyne.CanvasObject {
-	accountTypeString := ui.config.Account.Type.String() + " Account" // e.g. "Pro Account"
-	diskUsageString := ui.config.Account.DiskUsageHumanReadable()     // e.g. 1.5 GB
+	accountTypeString := i18n.T(ui.config.Account.Type.String() + " account") // e.g. "Pro account"
+	diskUsageString := ui.config.Account.DiskUsageHumanReadable()             // e.g. 1.5 GB
 
 	expiryTime := ui.config.Account.SubscriptionExpiry()
-	expiryString := "Never"
+	expiryString := i18n.T("Never")
 	if expiryTime != nil {
 		// TODO: Check if this is the right date time format
 		expiryString = expiryTime.Format(time.DateTime)
 	}
 
 	detailsGrid := container.NewGridWithColumns(2,
-		trailingLabel("Logged in as:"), widget.NewLabel(ui.config.Account.Username),
-		trailingLabel("API Key:"), widget.NewLabel(ui.config.Account.Key),
-		trailingLabel("Account Type:"), widget.NewLabel(accountTypeString),
-		trailingLabel("Expiry Date:"), widget.NewLabel(expiryString),
-		trailingLabel("Disk Usage:"), widget.NewLabel(diskUsageString),
+		trailingLabel(i18n.T("Logged in as:")), widget.NewLabel(ui.config.Account.Username),
+		trailingLabel(i18n.T("API Key:")), widget.NewLabel(ui.config.Account.Key),
+		trailingLabel(i18n.T("Account Type:")), widget.NewLabel(accountTypeString),
+		trailingLabel(i18n.T("Expiry Date:")), widget.NewLabel(expiryString),
+		trailingLabel(i18n.T("Disk Usage:")), widget.NewLabel(diskUsageString),
 	)
 
-	myAccountButton := NewBorderedButton("My Account", func() {
+	myAccountButton := NewBorderedButton(i18n.T("My Account"), func() {
 		// Asks the server for a one-time login link, so don't block the window
 		go OpenBrowser(ui.api.AccountLink())
 	})
-	logoutButton := NewBorderedButton("Logout", func() {
+	logoutButton := NewBorderedButton(i18n.T("Logout"), func() {
 		ui.Logout()
 		updateView()
 	})
@@ -152,5 +152,5 @@ func (ui *UI) buildAccountDetails(updateView func()) fyne.CanvasObject {
 		widget.NewLabel(""),
 		container.NewPadded(buttons),
 	)
-	return createGroup("Account Details", content)
+	return createGroup(i18n.T("Account Details"), content)
 }

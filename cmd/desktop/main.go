@@ -16,6 +16,7 @@ import (
 
 	"github.com/sundeiii/yeet-client/internal/config"
 	"github.com/sundeiii/yeet-client/internal/desktop"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	appipc "github.com/sundeiii/yeet-client/internal/ipc"
 	"github.com/sundeiii/yeet-client/pkg/puush"
 )
@@ -54,6 +55,8 @@ func run(arguments []string) error {
 		// Use default config if none was found
 		cfg = config.DefaultConfig()
 	}
+
+	i18n.SetLanguage(cfg.General.Language)
 
 	// Save config once app shuts down
 	defer store.Save(cfg)

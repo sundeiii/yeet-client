@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"errors"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -18,12 +19,12 @@ var errLoginCancelled = errors.New("login cancelled")
 // when the account has two-factor login. Not for the main thread.
 func (ui *UI) authenticateWithTwoFactor() error {
 	err := ui.api.Authenticate()
-	message := "This account has two-factor login. Enter the 6-digit code from your authenticator app, or a recovery code."
+	message := i18n.T("This account has two-factor login. Enter the 6-digit code from your authenticator app, or a recovery code.")
 	for tries := 0; tries < 5; tries++ {
 		switch err {
 		case puush.PuushErrorTwoFactorRequired:
 		case puush.PuushErrorTwoFactorWrong:
-			message = "That code didn't work. Codes change every 30 seconds, so try the one showing now."
+			message = i18n.T("That code didn't work. Codes change every 30 seconds, so try the one showing now.")
 		default:
 			return err
 		}
@@ -42,7 +43,7 @@ func (ui *UI) authenticateWithTwoFactor() error {
 func (ui *UI) askTwoFactorCode(message string) string {
 	result := make(chan string, 1)
 	fyne.Do(func() {
-		w := ui.app.NewWindow("puush login")
+		w := ui.app.NewWindow(i18n.T("puush login"))
 		w.SetIcon(puushIcon)
 		w.SetFixedSize(true)
 
@@ -67,8 +68,8 @@ func (ui *UI) askTwoFactorCode(message string) string {
 		entry := widget.NewEntry()
 		entry.SetPlaceHolder("123456")
 		entry.OnSubmitted = answer
-		login := NewBorderedButton("Log in", func() { answer(entry.Text) })
-		cancel := NewBorderedButton("Cancel", func() { answer("") })
+		login := NewBorderedButton(i18n.T("Log in"), func() { answer(entry.Text) })
+		cancel := NewBorderedButton(i18n.T("Cancel"), func() { answer("") })
 
 		w.SetContent(container.NewPadded(container.NewVBox(
 			label,

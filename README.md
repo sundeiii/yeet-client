@@ -10,6 +10,7 @@ It speaks the classic puush API, so it also works with other puush-compatible se
 - Upload any file, the clipboard, or right-click a file in your file manager
 - Recent uploads in the tray menu, notifications with a sound, links copied automatically
 - Starts with your computer and updates itself from this repository's releases
+- In English, Dutch and German: follows the system's language, or pick one under **Settings → General**
 
 Default shortcuts: area `Ctrl+Shift+4`, full screen `Ctrl+Shift+3`, window `Ctrl+Shift+2`, clipboard `Ctrl+Shift+5`, file `Ctrl+Shift+U`, and `Ctrl+Alt+P` to pause and resume all of them.
 

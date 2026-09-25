@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -34,7 +35,7 @@ func NewHotkeyButton(initialValue string) *HotkeyButton {
 			return
 		}
 		b.isCapturing = true
-		b.Text = "Press some keys..."
+		b.Text = i18n.T("Press some keys...")
 		b.Refresh()
 
 		if b.OnStart != nil {

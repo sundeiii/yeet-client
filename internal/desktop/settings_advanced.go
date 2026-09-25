@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"github.com/sundeiii/yeet-client/internal/screenshots"
 )
 
@@ -27,7 +28,7 @@ func (ui *UI) buildAdvancedTab(accountViewUpdate func()) fyne.CanvasObject {
 		ui.config.Capture.ScreenshotProvider = s
 
 		if warning := provider.Warning(); warning != "" {
-			ui.tray.ShowNotification("Notice", warning)
+			ui.tray.ShowNotification(i18n.T("Notice"), i18n.T(warning))
 		}
 	})
 
@@ -43,18 +44,19 @@ func (ui *UI) buildAdvancedTab(accountViewUpdate func()) fyne.CanvasObject {
 	providerSelect.SetSelected(ui.config.Capture.ScreenshotProvider)
 
 	// Screen Capture Quality
+	qualityBest, qualityHigh, qualityMedium := i18n.T("No Compression"), i18n.T("High (JPG)"), i18n.T("Medium (JPG)")
 	qualityOptions := []string{
-		"No Compression",
-		"High (JPG)",
-		"Medium (JPG)",
+		qualityBest,
+		qualityHigh,
+		qualityMedium,
 	}
 	qualityRadio := widget.NewRadioGroup(qualityOptions, func(s string) {
 		switch s {
-		case "No Compression":
+		case qualityBest:
 			ui.config.Capture.UploadQuality = screenshots.QualityBest
-		case "High (JPG)":
+		case qualityHigh:
 			ui.config.Capture.UploadQuality = screenshots.QualityHigh
-		case "Medium (JPG)":
+		case qualityMedium:
 			ui.config.Capture.UploadQuality = screenshots.QualityMedium
 		default:
 			ui.config.Capture.UploadQuality = screenshots.QualityBest
@@ -63,45 +65,48 @@ func (ui *UI) buildAdvancedTab(accountViewUpdate func()) fyne.CanvasObject {
 
 	switch ui.config.Capture.UploadQuality {
 	case screenshots.QualityBest:
-		qualityRadio.SetSelected("No Compression")
+		qualityRadio.SetSelected(qualityBest)
 	case screenshots.QualityHigh:
-		qualityRadio.SetSelected("High (JPG)")
+		qualityRadio.SetSelected(qualityHigh)
 	case screenshots.QualityMedium:
-		qualityRadio.SetSelected("Medium (JPG)")
+		qualityRadio.SetSelected(qualityMedium)
 	default:
-		qualityRadio.SetSelected("No Compression")
+		qualityRadio.SetSelected(qualityBest)
 	}
 
-	contextMenuCheckbox := widget.NewCheck("Show \"Upload with puush\" in file context menus", ui.UpdateContextMenuConfiguration)
+	contextMenuCheckbox := widget.NewCheck(i18n.T("Show \"Upload with puush\" in file context menus"), ui.UpdateContextMenuConfiguration)
 	contextMenuCheckbox.Checked = ui.config.General.ContextMenu
-	contextMenuGroup := createGroup("Context Menu", contextMenuCheckbox)
+	contextMenuGroup := createGroup(i18n.T("Context Menu"), contextMenuCheckbox)
 
 	// Fullscreen Capture
+	allScreens := i18n.T("Capture all screens")
+	mouseScreen := i18n.T("Capture screen containing mouse cursor")
+	primaryScreen := i18n.T("Always capture primary screen")
 	fullscreenOptions := []string{
-		"Capture all screens",
-		"Capture screen containing mouse cursor",
-		"Always capture primary screen",
+		allScreens,
+		mouseScreen,
+		primaryScreen,
 	}
 	fullscreenRadio := widget.NewRadioGroup(fullscreenOptions, func(s string) {
 		switch s {
-		case "Capture all screens":
+		case allScreens:
 			ui.config.Capture.FullscreenMode = screenshots.FullscreenModeAllScreens
-		case "Capture screen containing mouse cursor":
+		case mouseScreen:
 			ui.config.Capture.FullscreenMode = screenshots.FullscreenModeMouse
-		case "Always capture primary screen":
+		case primaryScreen:
 			ui.config.Capture.FullscreenMode = screenshots.FullscreenModePrimary
 		}
 	})
 
 	switch ui.config.Capture.FullscreenMode {
 	case screenshots.FullscreenModeAllScreens:
-		fullscreenRadio.SetSelected("Capture all screens")
+		fullscreenRadio.SetSelected(allScreens)
 	case screenshots.FullscreenModeMouse:
-		fullscreenRadio.SetSelected("Capture screen containing mouse cursor")
+		fullscreenRadio.SetSelected(mouseScreen)
 	case screenshots.FullscreenModePrimary:
-		fullscreenRadio.SetSelected("Always capture primary screen")
+		fullscreenRadio.SetSelected(primaryScreen)
 	default:
-		fullscreenRadio.SetSelected("Capture all screens")
+		fullscreenRadio.SetSelected(allScreens)
 	}
 
 	// Custom Server URL
@@ -120,15 +125,15 @@ func (ui *UI) buildAdvancedTab(accountViewUpdate func()) fyne.CanvasObject {
 
 	return container.NewVScroll(container.NewVBox(
 		widget.NewSeparator(),
-		createGroup("Screenshot Provider", providerSelect),
+		createGroup(i18n.T("Screenshot Provider"), providerSelect),
 		widget.NewSeparator(),
-		createGroup("Screen Capture Quality", qualityRadio),
+		createGroup(i18n.T("Screen Capture Quality"), qualityRadio),
 		widget.NewSeparator(),
 		contextMenuGroup,
 		widget.NewSeparator(),
-		createGroup("Fullscreen Capture", fullscreenRadio),
+		createGroup(i18n.T("Fullscreen Capture"), fullscreenRadio),
 		widget.NewSeparator(),
-		createGroup("Server URL", serverUrlEntry),
+		createGroup(i18n.T("Server URL"), serverUrlEntry),
 		widget.NewSeparator(),
 	))
 }

@@ -3,6 +3,7 @@ package desktop
 import (
 	"errors"
 	"fmt"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"image/color"
 	"io"
 	"strings"
@@ -57,7 +58,7 @@ func (ui *UI) buildUploadsTab(w fyne.Window) *uploadsView {
 	}
 
 	v.search = widget.NewEntry()
-	v.search.SetPlaceHolder("Search by filename")
+	v.search.SetPlaceHolder(i18n.T("Search by filename"))
 	v.search.OnChanged = func(text string) {
 		// Wait for a pause in typing
 		if v.searchTimer != nil {
@@ -70,7 +71,7 @@ func (ui *UI) buildUploadsTab(w fyne.Window) *uploadsView {
 	refresh := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() { v.load(v.query, false) })
 
 	v.status = widget.NewLabel("")
-	v.more = widget.NewButton("Load more", func() { v.load(v.query, true) })
+	v.more = widget.NewButton(i18n.T("Load more"), func() { v.load(v.query, true) })
 	v.more.Hide()
 
 	v.list = widget.NewList(
@@ -134,7 +135,7 @@ func (v *uploadsView) updateRow(id widget.ListItemID, object fyne.CanvasObject) 
 	upload := v.items[id]
 
 	row.name.SetText(upload.Filename)
-	meta := []string{typeLabel(upload.Filename), upload.SizeHumanReadable(), plural(upload.Views, "view"), upload.Created.Local().Format("Jan 2, 2006 15:04")}
+	meta := []string{typeLabel(upload.Filename), upload.SizeHumanReadable(), views(upload.Views), i18n.Date(upload.Created.Local())}
 	if upload.Pool != "" {
 		meta = append(meta, upload.Pool)
 	}
@@ -146,7 +147,7 @@ func (v *uploadsView) updateRow(id widget.ListItemID, object fyne.CanvasObject) 
 
 	row.copy.OnTapped = func() {
 		fyne.CurrentApp().Clipboard().SetContent(upload.Url)
-		v.status.SetText("Copied the link to " + upload.Filename)
+		v.status.SetText(i18n.T("Copied the link to %s", upload.Filename))
 	}
 	row.open.OnTapped = func() { OpenBrowser(upload.Url) }
 
@@ -202,8 +203,8 @@ func (v *uploadsView) fetchThumbnail(uploadId int) {
 func (v *uploadsView) confirmDelete(upload *puush.Upload) {
 	// The native dialog waits for an answer, so not on the main thread
 	go func() {
-		confirmed := dialog.Message("Delete %s? Its link will stop working.", upload.Filename).
-			Title("Delete upload").
+		confirmed := dialog.Message(i18n.T("Delete %s? Its link will stop working."), upload.Filename).
+			Title(i18n.T("Delete upload")).
 			YesNo()
 		if !confirmed {
 			return
@@ -212,10 +213,10 @@ func (v *uploadsView) confirmDelete(upload *puush.Upload) {
 		_, err := v.ui.api.Delete(upload.Id)
 		fyne.Do(func() {
 			if err != nil {
-				v.status.SetText("Could not delete " + upload.Filename + ": " + puush.FormatError(err))
+				v.status.SetText(i18n.T("Could not delete %s: %s", upload.Filename, puush.FormatError(err)))
 				return
 			}
-			v.status.SetText("Deleted " + upload.Filename)
+			v.status.SetText(i18n.T("Deleted %s", upload.Filename))
 			v.load(v.query, false)
 		})
 		v.ui.tray.RefreshHistory()
@@ -251,7 +252,7 @@ func (v *uploadsView) load(query string, more bool) {
 	if !v.ui.api.Account.Credentials.HasApiKey() {
 		v.items = nil
 		v.list.Refresh()
-		v.status.SetText("Log in to see your uploads here.")
+		v.status.SetText(i18n.T("Log in to see your uploads here."))
 		v.more.Hide()
 		return
 	}
@@ -263,7 +264,7 @@ func (v *uploadsView) load(query string, more bool) {
 		offset = len(v.items)
 	}
 	v.loading = true
-	v.status.SetText("Loading...")
+	v.status.SetText(i18n.T("Loading..."))
 
 	go func() {
 		page, err := v.ui.api.Uploads(query, offset, uploadsPageSize)
@@ -275,9 +276,9 @@ func (v *uploadsView) load(query string, more bool) {
 			if err != nil {
 				switch {
 				case errors.Is(err, puush.ErrNotSupported):
-					v.status.SetText("This server doesn't support browsing uploads in the app.")
+					v.status.SetText(i18n.T("This server doesn't support browsing uploads in the app."))
 				default:
-					v.status.SetText("Could not load your uploads: " + puush.FormatError(err))
+					v.status.SetText(i18n.T("Could not load your uploads: %s", puush.FormatError(err)))
 				}
 				return
 			}
@@ -295,11 +296,11 @@ func (v *uploadsView) load(query string, more bool) {
 
 			switch {
 			case v.total == 0 && query != "":
-				v.status.SetText("Nothing matches that search.")
+				v.status.SetText(i18n.T("Nothing matches that search."))
 			case v.total == 0:
-				v.status.SetText("Nothing uploaded yet.")
+				v.status.SetText(i18n.T("Nothing uploaded yet."))
 			default:
-				v.status.SetText(fmt.Sprintf("Showing %d of %d", len(v.items), v.total))
+				v.status.SetText(i18n.T("Showing %d of %d", len(v.items), v.total))
 			}
 			if len(v.items) < v.total {
 				v.more.Show()
@@ -314,14 +315,14 @@ func (v *uploadsView) load(query string, more bool) {
 func typeLabel(filename string) string {
 	dot := strings.LastIndex(filename, ".")
 	if dot < 0 || len(filename)-dot > 6 {
-		return "FILE"
+		return i18n.T("FILE")
 	}
 	return strings.ToUpper(filename[dot+1:])
 }
 
-func plural(count int, word string) string {
+func views(count int) string {
 	if count == 1 {
-		return "1 " + word
+		return i18n.T("1 view")
 	}
-	return fmt.Sprintf("%d %ss", count, word)
+	return i18n.T("%d views", count)
 }

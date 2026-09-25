@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"log"
 
 	"github.com/sundeiii/yeet-client/internal/config"
@@ -18,7 +19,7 @@ func updaterLoop(cfg *config.Config, ui *desktop.UI) {
 	// Check if we can even update, and inform the user if not
 	if !updater.CanUpdate() {
 		log.Printf("puush cannot update itself, no write permission to the executable path")
-		ui.ShowNotification("puush cannot update itself!", "puush has no write permission to the installation folder. Please move it somewhere else!")
+		ui.ShowNotification(i18n.T("puush cannot update itself!"), i18n.T("puush has no write permission to the installation folder. Please move it somewhere else!"))
 		return
 	}
 
@@ -33,7 +34,7 @@ func updaterLoop(cfg *config.Config, ui *desktop.UI) {
 	wasUpdated := updater.Cleanup()
 	if wasUpdated {
 		log.Printf("puush was updated to version %s", currentVersion)
-		ui.ShowNotification("puush was updated!", "You are now running "+currentVersion.String())
+		ui.ShowNotification(i18n.T("puush was updated!"), i18n.T("You are now running %s", currentVersion.String()))
 		// TODO: Add button for opening changelog page on github
 	}
 
@@ -66,7 +67,7 @@ func handleUpdateResult(result updater.CheckResult, cfg *config.Config, ui *desk
 
 	if result.Error != nil {
 		log.Printf("Failed to check for updates: %v", result.Error)
-		ui.ShowNotification("Update check failed!", "You may have to check for updates manually :(")
+		ui.ShowNotification(i18n.T("Update check failed!"), i18n.T("You may have to check for updates manually :("))
 		return false
 	}
 	if result.Candidate == nil {
@@ -76,19 +77,19 @@ func handleUpdateResult(result updater.CheckResult, cfg *config.Config, ui *desk
 		)
 		if result.Manual {
 			ui.ShowNotification(
-				"No updates available",
-				"You're already running the latest version ("+result.CurrentVersion.String()+").",
+				i18n.T("No updates available"),
+				i18n.T("You're already running the latest version (%s).", result.CurrentVersion.String()),
 			)
 		}
 		return false
 	}
 
 	log.Printf("Update available: %s -> %s", result.CurrentVersion, result.Candidate.Version())
-	ui.ShowNotification("Downloading update...", "puush will automatically restart when done!")
+	ui.ShowNotification(i18n.T("Downloading update..."), i18n.T("puush will automatically restart when done!"))
 
 	updatedExecutable, err := updater.Perform(result.Candidate)
 	if err != nil {
-		ui.ShowNotification("Update failed!", "You may have to install this update manually :(")
+		ui.ShowNotification(i18n.T("Update failed!"), i18n.T("You may have to install this update manually :("))
 		log.Printf("Failed to perform update: %v", err)
 		return false
 	}
@@ -98,7 +99,7 @@ func handleUpdateResult(result updater.CheckResult, cfg *config.Config, ui *desk
 
 	log.Printf("Update downloaded, restarting...")
 	if err := restart(updatedExecutable); err != nil {
-		ui.ShowNotification("Update restart failed!", "Please restart puush manually to finish the update.")
+		ui.ShowNotification(i18n.T("Update restart failed!"), i18n.T("Please restart puush manually to finish the update."))
 		log.Printf("Failed to restart after update: %v", err)
 		return false
 	}

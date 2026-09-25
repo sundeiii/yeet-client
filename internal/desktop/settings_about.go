@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"net/url"
 	"strconv"
 
@@ -31,25 +32,25 @@ func (ui *UI) buildAboutTab() fyne.CanvasObject {
 
 	details := container.NewVBox(
 		widget.NewLabelWithStyle(
-			"Build Information",
+			i18n.T("Build Information"),
 			fyne.TextAlignLeading,
 			fyne.TextStyle{Bold: true},
 		),
 		widget.NewForm(
 			widget.NewFormItem(
-				"Version",
+				i18n.T("Version"),
 				readOnlyEntry(metadata.Version),
 			),
 			widget.NewFormItem(
-				"Build",
+				i18n.T("Build"),
 				readOnlyEntry(strconv.Itoa(metadata.Build)),
 			),
 			widget.NewFormItem(
-				"Commit",
+				i18n.T("Commit"),
 				readOnlyEntry(metadata.Custom["commit"]),
 			),
 			widget.NewFormItem(
-				"Source",
+				i18n.T("Source"),
 				widget.NewHyperlink("github.com/sundeiii/yeet-client", projectURL),
 			),
 		),

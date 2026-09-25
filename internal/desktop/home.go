@@ -1,7 +1,6 @@
 package desktop
 
 import (
-	"fmt"
 	"image/color"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/sundeiii/yeet-client/assets"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 )
 
 var (
@@ -42,11 +42,11 @@ func (ui *UI) homeContent(w fyne.Window, goToAccount func()) []fyne.CanvasObject
 	title := canvas.NewText("puush", color.Black)
 	title.TextSize = 20
 
-	status := "You're not logged in yet."
+	status := i18n.T("You're not logged in yet.")
 	if ui.config.Account.HasCredentials() {
-		status = fmt.Sprintf("Logged in as %s  ·  %s account  ·  %s used",
+		status = i18n.T("Logged in as %s  ·  %s  ·  %s used",
 			ui.config.Account.Username,
-			ui.config.Account.Type.String(),
+			i18n.T(ui.config.Account.Type.String()+" account"),
 			ui.config.Account.DiskUsageHumanReadable(),
 		)
 	}
@@ -57,10 +57,10 @@ func (ui *UI) homeContent(w fyne.Window, goToAccount func()) []fyne.CanvasObject
 	objects := []fyne.CanvasObject{widget.NewSeparator(), container.NewPadded(header)}
 
 	if !ui.config.Account.HasCredentials() {
-		intro := widget.NewLabel("Log in to start sharing screenshots and files. If you don't have an account yet, you can sign up for free.")
+		intro := widget.NewLabel(i18n.T("Log in to start sharing screenshots and files. If you don't have an account yet, you can sign up for free."))
 		intro.Wrapping = fyne.TextWrapWord
-		login := NewBorderedButton("Log in", goToAccount)
-		return append(objects, createGroup("Get started", container.NewVBox(intro, container.NewGridWrap(fyne.NewSize(160, 30), login))))
+		login := NewBorderedButton(i18n.T("Log in"), goToAccount)
+		return append(objects, createGroup(i18n.T("Get started"), container.NewVBox(intro, container.NewGridWrap(fyne.NewSize(160, 30), login))))
 	}
 
 	// The window would end up in the screenshot, so it hides first
@@ -74,23 +74,23 @@ func (ui *UI) homeContent(w fyne.Window, goToAccount func()) []fyne.CanvasObject
 		}
 	}
 
-	captureArea := actionButton("Capture Area", selectionActionIcon, hideThen(ui.tray.UploadAreaScreenshot))
-	captureDesktop := actionButton("Capture Desktop", fullscreenActionIcon, hideThen(ui.tray.UploadDesktopScreenshot))
-	captureWindow := actionButton("Capture Window", windowActionIcon, hideThen(ui.tray.UploadWindowScreenshot))
-	captureEdit := actionButton("Capture and Edit", selectionActionIcon, hideThen(ui.tray.EditAreaScreenshot))
-	captureLast := actionButton("Last Area Again", selectionActionIcon, hideThen(ui.tray.UploadLastAreaScreenshot))
+	captureArea := actionButton(i18n.T("Capture Area"), selectionActionIcon, hideThen(ui.tray.UploadAreaScreenshot))
+	captureDesktop := actionButton(i18n.T("Capture Desktop"), fullscreenActionIcon, hideThen(ui.tray.UploadDesktopScreenshot))
+	captureWindow := actionButton(i18n.T("Capture Window"), windowActionIcon, hideThen(ui.tray.UploadWindowScreenshot))
+	captureEdit := actionButton(i18n.T("Capture and Edit"), selectionActionIcon, hideThen(ui.tray.EditAreaScreenshot))
+	captureLast := actionButton(i18n.T("Last Area Again"), selectionActionIcon, hideThen(ui.tray.UploadLastAreaScreenshot))
 	if !ui.tray.HasLastArea() {
 		captureLast.Instance.Disable()
 	}
-	uploadClipboard := actionButton("Upload Clipboard", clipboardActionIcon, func() { go ui.tray.UploadFromClipboard() })
-	uploadFile := actionButton("Upload File", uploadActionIcon, ui.tray.UploadFileFromDialog)
+	uploadClipboard := actionButton(i18n.T("Upload Clipboard"), clipboardActionIcon, func() { go ui.tray.UploadFromClipboard() })
+	uploadFile := actionButton(i18n.T("Upload File"), uploadActionIcon, ui.tray.UploadFileFromDialog)
 
 	actions := container.NewGridWithColumns(3,
 		captureArea, captureEdit, captureDesktop,
 		captureWindow, captureLast, uploadClipboard,
 		uploadFile,
 	)
-	objects = append(objects, createGroup("Quick actions", actions))
+	objects = append(objects, createGroup(i18n.T("Quick actions"), actions))
 
 	// Where uploads go
 	if pools := ui.tray.Pools(); len(pools) > 0 {
@@ -109,35 +109,35 @@ func (ui *UI) homeContent(w fyne.Window, goToAccount func()) []fyne.CanvasObject
 				}
 			}
 		}
-		hint := widget.NewLabel("New screenshots and files go into this pool.")
-		objects = append(objects, createGroup("Upload to", container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(200, 36), poolSelect), nil, hint)))
+		hint := widget.NewLabel(i18n.T("New screenshots and files go into this pool."))
+		objects = append(objects, createGroup(i18n.T("Upload to"), container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(200, 36), poolSelect), nil, hint)))
 	}
 
 	// Uploads that need attention
 	var attention []fyne.CanvasObject
 	if name, uploading := ui.tray.ActiveUpload(); uploading {
-		label := widget.NewLabel("Uploading " + name + "...")
+		label := widget.NewLabel(i18n.T("Uploading %s...", name))
 		label.Truncation = fyne.TextTruncateEllipsis
-		cancel := NewBorderedButton("Cancel", ui.tray.CancelUpload)
+		cancel := NewBorderedButton(i18n.T("Cancel"), ui.tray.CancelUpload)
 		attention = append(attention, container.NewBorder(nil, nil, nil, container.NewGridWrap(fyne.NewSize(100, 30), cancel), label))
 	}
 	if failed := ui.tray.FailedUploads(); len(failed) > 0 {
-		text := fmt.Sprintf("%d uploads failed and are waiting to be retried.", len(failed))
+		text := i18n.T("%d uploads failed and are waiting to be retried.", len(failed))
 		if len(failed) == 1 {
-			text = fmt.Sprintf("%s failed to upload and is waiting to be retried.", failed[0])
+			text = i18n.T("%s failed to upload and is waiting to be retried.", failed[0])
 		}
 		label := widget.NewLabel(text)
 		label.Wrapping = fyne.TextWrapWord
-		retry := NewBorderedButton("Retry", func() { go ui.tray.RetryFailedUploads() })
-		discard := NewBorderedButton("Discard", func() { go ui.tray.DiscardFailedUploads() })
+		retry := NewBorderedButton(i18n.T("Retry"), func() { go ui.tray.RetryFailedUploads() })
+		discard := NewBorderedButton(i18n.T("Discard"), func() { go ui.tray.DiscardFailedUploads() })
 		buttons := container.NewGridWrap(fyne.NewSize(100, 30), retry, discard)
 		attention = append(attention, container.NewBorder(nil, nil, nil, buttons, label))
 	}
 	if len(attention) > 0 {
-		objects = append(objects, createGroup("Uploads", container.NewVBox(attention...)))
+		objects = append(objects, createGroup(i18n.T("Uploads"), container.NewVBox(attention...)))
 	}
 
-	tip := widget.NewLabel("Tip: copied files and images can be uploaded with Upload Clipboard, and files can be uploaded by right-clicking them.")
+	tip := widget.NewLabel(i18n.T("Tip: copied files and images can be uploaded with Upload Clipboard, and files can be uploaded by right-clicking them."))
 	tip.Wrapping = fyne.TextWrapWord
 	objects = append(objects, layout.NewSpacer(), container.NewPadded(tip))
 	return objects

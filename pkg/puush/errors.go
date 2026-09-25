@@ -1,6 +1,9 @@
 package puush
 
-import "strings"
+import (
+	"github.com/sundeiii/yeet-client/internal/i18n"
+	"strings"
+)
 
 var (
 	PuushErrorInvalidCredentials  PuushError = NewPuushError("Authentication failure", -1, false)
@@ -58,26 +61,26 @@ func NewPuushError(name string, value int, shouldRetry bool) PuushError {
 func FormatError(err error) string {
 	puushErr, ok := err.(PuushError)
 	if !ok {
-		return "An unexpected error occured. Please try again!"
+		return i18n.T("An unexpected error occured. Please try again!")
 	}
 
 	switch puushErr {
 	case PuushErrorInvalidCredentials:
-		return "Authentication failure. Your API key may no longer be valid."
+		return i18n.T("Authentication failure. Your API key may no longer be valid.")
 	case PuushErrorRequestFailure:
-		return "Connection with server went wrong. Please check your connection and try again."
+		return i18n.T("Connection with server went wrong. Please check your connection and try again.")
 	case PuushErrorChecksumFailure:
-		return "Server responded with an unexpected checksum error."
+		return i18n.T("Server responded with an unexpected checksum error.")
 	case PuushErrorInsufficientStorage:
-		return "Insufficient account storage remaining. Please delete some files or consider upgrading to a pro account!"
+		return i18n.T("Insufficient account storage remaining. Please delete some files or consider upgrading to a pro account!")
 	case PuushErrorUploadTooLarge:
-		return "The selected file is too large for this server."
+		return i18n.T("The selected file is too large for this server.")
 	case PuushErrorTwoFactorRequired:
-		return "This account needs the code from your authenticator app."
+		return i18n.T("This account needs the code from your authenticator app.")
 	case PuushErrorTwoFactorWrong:
-		return "That code didn't work. Codes change every 30 seconds, so try the one showing now."
+		return i18n.T("That code didn't work. Codes change every 30 seconds, so try the one showing now.")
 	default:
-		return "An unexpected error occured. Please try again!"
+		return i18n.T("An unexpected error occured. Please try again!")
 	}
 }
 

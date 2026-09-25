@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"image"
 	"image/color"
 	"log"
@@ -45,7 +46,7 @@ func Open(app fyne.App, screenshot []byte, done func([]byte)) {
 		return
 	}
 
-	w := app.NewWindow("puush editor")
+	w := app.NewWindow(i18n.T("puush editor"))
 	finished := false
 	finish := func(result []byte) {
 		if finished {
@@ -80,7 +81,7 @@ func Open(app fyne.App, screenshot []byte, done func([]byte)) {
 	tools := container.NewHBox()
 	for _, entry := range toolNames {
 		entry := entry
-		button := widget.NewButton(entry.name, func() { selectTool(entry.tool) })
+		button := widget.NewButton(i18n.T(entry.name), func() { selectTool(entry.tool) })
 		toolButtons = append(toolButtons, button)
 		tools.Add(button)
 	}
@@ -103,7 +104,7 @@ func Open(app fyne.App, screenshot []byte, done func([]byte)) {
 	swatches[0].setSelected(true)
 
 	var undo *widget.Button
-	undo = widget.NewButtonWithIcon("Undo", theme.ContentUndoIcon(), func() {
+	undo = widget.NewButtonWithIcon(i18n.T("Undo"), theme.ContentUndoIcon(), func() {
 		area.undo()
 	})
 	area.onChange = func() {
@@ -115,8 +116,8 @@ func Open(app fyne.App, screenshot []byte, done func([]byte)) {
 	}
 	area.onChange()
 
-	cancel := widget.NewButton("Cancel", func() { finish(nil) })
-	upload := widget.NewButtonWithIcon("Upload", theme.UploadIcon(), func() {
+	cancel := widget.NewButton(i18n.T("Cancel"), func() { finish(nil) })
+	upload := widget.NewButtonWithIcon(i18n.T("Upload"), theme.UploadIcon(), func() {
 		data, err := drawing.PNG()
 		if err != nil {
 			log.Printf("Editor could not save the picture: %v", err)

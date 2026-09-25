@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"log"
 
 	"github.com/sundeiii/yeet-client/internal/contextmenu"
@@ -16,7 +17,7 @@ func (ui *UI) UpdateContextMenuConfiguration(enabled bool) {
 	if err := contextmenu.Apply(enabled); err != nil {
 		log.Printf("Failed to update context-menu integration: %v", err)
 		if ui.tray != nil {
-			ui.tray.ShowErrorNotification("Could not update the context menu. puush will try again the next time it starts.")
+			ui.tray.ShowErrorNotification(i18n.T("Could not update the context menu. puush will try again the next time it starts."))
 		}
 	}
 }

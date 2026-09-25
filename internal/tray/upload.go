@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"io"
 	"io/fs"
 	"log"
@@ -104,7 +105,7 @@ func (m *TrayManager) progressReporter(job *uploadJob, size int64) func(float64)
 			return
 		}
 		last = int(percentage)
-		m.OnTrayProgressUpdate(percentage, fmt.Sprintf("puush: uploading %s (%d%% of %s)", job.Name, last, humanSize(size)))
+		m.OnTrayProgressUpdate(percentage, i18n.T("puush: uploading %s (%d%% of %s)", job.Name, last, humanSize(size)))
 		m.track(job, func(entry *QueueEntry) { entry.Progress = percentage })
 	}
 }
@@ -163,7 +164,7 @@ func (m *TrayManager) processBatch(jobs []*uploadJob) {
 			log.Println("Upload cancelled:", job.Name)
 			fyne.Do(m.ResetTrayIcon)
 			m.track(job, func(entry *QueueEntry) { entry.Status = QueueCancelled })
-			m.ShowNotification("Upload cancelled", job.Name)
+			m.ShowNotification(i18n.T("Upload cancelled"), job.Name)
 		default:
 			m.onUploadFailed(job, err)
 		}
@@ -211,10 +212,10 @@ func (m *TrayManager) onLinksReady(links []string) {
 	}
 
 	all := strings.Join(links, "\n")
-	message := fmt.Sprintf("%d files puushed!", len(links))
+	message := i18n.T("%d files puushed!", len(links))
 	if m.config.General.CopyToClipboard {
 		fyne.Do(func() { fyne.CurrentApp().Clipboard().SetContent(all) })
-		message += " All links were copied."
+		message = i18n.T("%d files puushed! All links were copied.", len(links))
 	}
 	m.ShowNotification(message, all)
 }
@@ -230,7 +231,7 @@ func (m *TrayManager) onUploadFailed(job *uploadJob, err error) {
 	})
 
 	if errors.Is(err, fs.ErrNotExist) {
-		m.ShowErrorNotification(fmt.Sprintf("%s could not be uploaded because it no longer exists.", job.Name))
+		m.ShowErrorNotification(i18n.T("%s could not be uploaded because it no longer exists.", job.Name))
 		m.forgetFailed(job)
 		return
 	}
@@ -244,7 +245,7 @@ func (m *TrayManager) onUploadFailed(job *uploadJob, err error) {
 	if puush.ShouldRetryError(err) && job.Attempts <= len(retryDelays) {
 		delay := retryDelays[job.Attempts-1]
 		if job.Attempts == 1 {
-			m.ShowErrorNotification(puush.FormatError(err) + " puush will try again in a moment.")
+			m.ShowErrorNotification(puush.FormatError(err) + " " + i18n.T("puush will try again in a moment."))
 		}
 		time.AfterFunc(delay, func() {
 			if err := m.enqueue(uploadBatch{jobs: []*uploadJob{job}}); err != nil {
@@ -255,7 +256,7 @@ func (m *TrayManager) onUploadFailed(job *uploadJob, err error) {
 	}
 
 	m.keepFailed(job)
-	m.ShowErrorNotification(puush.FormatError(err) + " The upload was kept, so you can retry it from the tray menu.")
+	m.ShowErrorNotification(puush.FormatError(err) + " " + i18n.T("The upload was kept, so you can retry it from the tray menu."))
 }
 
 // OnUploadError reports an error that happened before an upload could start.

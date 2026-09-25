@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"fmt"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"image/color"
 
 	"fyne.io/fyne/v2"
@@ -37,11 +38,11 @@ func (ui *UI) buildQueueTab() *queueView {
 	)
 	v.list.OnSelected = func(id widget.ListItemID) { v.list.Unselect(id) }
 
-	v.empty = widget.NewLabel("Nothing uploaded since puush started. Screenshots and files show up here while they upload.")
+	v.empty = widget.NewLabel(i18n.T("Nothing uploaded since puush started. Screenshots and files show up here while they upload."))
 	v.empty.Wrapping = fyne.TextWrapWord
 
-	clear := widget.NewButton("Clear finished", ui.tray.ClearFinishedUploads)
-	retryAll := widget.NewButton("Retry all failed", func() { go ui.tray.RetryFailedUploads() })
+	clear := widget.NewButton(i18n.T("Clear finished"), ui.tray.ClearFinishedUploads)
+	retryAll := widget.NewButton(i18n.T("Retry all failed"), func() { go ui.tray.RetryFailedUploads() })
 	bottom := container.NewHBox(clear, retryAll)
 
 	v.content = container.NewBorder(nil, container.NewPadded(bottom), nil, nil, container.NewStack(v.list, container.NewPadded(v.empty)))
@@ -99,34 +100,34 @@ func (row *queueRow) show(ui *UI, entry tray.QueueEntry) {
 	switch entry.Status {
 	case tray.QueueWaiting:
 		row.icon.SetResource(theme.HistoryIcon())
-		row.detail.Text = "Waiting"
+		row.detail.Text = i18n.T("Waiting")
 	case tray.QueueUploading:
 		row.icon.SetResource(theme.UploadIcon())
-		row.detail.Text = fmt.Sprintf("Uploading: %d%% of %s", int(entry.Progress), formatSize(entry.Size))
+		row.detail.Text = i18n.T("Uploading: %d%% of %s", int(entry.Progress), formatSize(entry.Size))
 		row.progress.SetValue(entry.Progress / 100)
 		row.progress.Show()
-		row.action.SetText("Cancel")
+		row.action.SetText(i18n.T("Cancel"))
 		row.action.OnTapped = ui.tray.CancelUpload
 		row.action.Show()
 	case tray.QueueDone:
 		row.icon.SetResource(theme.ConfirmIcon())
 		row.detail.Text = entry.Link
-		row.action.SetText("Copy link")
+		row.action.SetText(i18n.T("Copy link"))
 		link := entry.Link
 		row.action.OnTapped = func() { fyne.CurrentApp().Clipboard().SetContent(link) }
 		row.action.Show()
 	case tray.QueueFailed:
 		row.icon.SetResource(theme.ErrorIcon())
-		row.detail.Text = "Failed: " + entry.Error
+		row.detail.Text = i18n.T("Failed: %s", entry.Error)
 		if entry.Retryable {
 			id := entry.Id
-			row.action.SetText("Retry")
+			row.action.SetText(i18n.T("Retry"))
 			row.action.OnTapped = func() { go ui.tray.RetryUpload(id) }
 			row.action.Show()
 		}
 	case tray.QueueCancelled:
 		row.icon.SetResource(theme.CancelIcon())
-		row.detail.Text = "Cancelled"
+		row.detail.Text = i18n.T("Cancelled")
 	}
 	row.detail.Refresh()
 }

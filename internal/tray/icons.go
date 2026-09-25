@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"math"
 	"time"
 
@@ -57,7 +58,7 @@ func (m *TrayManager) OnTrayProgressComplete() {
 	fyne.Do(func() {
 		if desktopApp, ok := m.targetApp.(desktop.App); ok {
 			desktopApp.SetSystemTrayIcon(puushTrayCompleteIcon)
-			setTrayTooltip("puush: upload complete!")
+			setTrayTooltip(i18n.T("puush: upload complete!"))
 			m.ResetTrayIconSoon()
 		}
 	})
@@ -69,7 +70,7 @@ func (m *TrayManager) OnTrayProgressFail() {
 	fyne.Do(func() {
 		if desktopApp, ok := m.targetApp.(desktop.App); ok {
 			desktopApp.SetSystemTrayIcon(puushTrayFailIcon)
-			setTrayTooltip("puush: upload failed!")
+			setTrayTooltip(i18n.T("puush: upload failed!"))
 			m.ResetTrayIconSoon()
 		}
 	})

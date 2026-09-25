@@ -2,6 +2,7 @@ package tray
 
 import (
 	"errors"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"log"
 
 	"fyne.io/fyne/v2"
@@ -82,9 +83,9 @@ func (m *TrayManager) buildPoolMenu() *fyne.MenuItem {
 		items = append(items, item)
 	}
 
-	menu := fyne.NewMenuItem("Upload To", nil)
+	menu := fyne.NewMenuItem(i18n.T("Upload To"), nil)
 	if current != nil {
-		menu.Label = "Upload To: " + escapeMenuLabel(current.Name)
+		menu.Label = i18n.T("Upload To: %s", escapeMenuLabel(current.Name))
 	}
 	menu.ChildMenu = fyne.NewMenu("", items...)
 	return menu

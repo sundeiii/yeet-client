@@ -4,6 +4,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 )
 
 func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
@@ -59,15 +60,15 @@ func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
 		ui.config.Hotkeys.EditArea = s
 	})
 
-	rowFullscreen := container.NewGridWithColumns(2, widget.NewLabel("Capture full screen:"), fullScreenButton)
-	rowWindow := container.NewGridWithColumns(2, widget.NewLabel("Capture current window:"), currentWindowButton)
-	rowArea := container.NewGridWithColumns(2, widget.NewLabel("Capture Area:"), captureAreaButton)
-	rowFile := container.NewGridWithColumns(2, widget.NewLabel("Upload File:"), uploadFileButton)
-	rowClipboard := container.NewGridWithColumns(2, widget.NewLabel("Upload Clipboard:"), uploadClipboardButton)
-	rowToggle := container.NewGridWithColumns(2, widget.NewLabel("Toggle puush functionality:"), togglePuushButton)
-	rowRepeatArea := container.NewGridWithColumns(2, widget.NewLabel("Capture last area again:"), repeatAreaButton)
-	rowDelayedArea := container.NewGridWithColumns(2, widget.NewLabel("Capture area after a delay:"), delayedAreaButton)
-	rowEditArea := container.NewGridWithColumns(2, widget.NewLabel("Capture area and edit:"), editAreaButton)
+	rowFullscreen := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Capture full screen:")), fullScreenButton)
+	rowWindow := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Capture current window:")), currentWindowButton)
+	rowArea := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Capture Area:")), captureAreaButton)
+	rowFile := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Upload File:")), uploadFileButton)
+	rowClipboard := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Upload Clipboard:")), uploadClipboardButton)
+	rowToggle := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Toggle puush functionality:")), togglePuushButton)
+	rowRepeatArea := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Capture last area again:")), repeatAreaButton)
+	rowDelayedArea := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Capture area after a delay:")), delayedAreaButton)
+	rowEditArea := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Capture area and edit:")), editAreaButton)
 
 	content := container.NewVBox(
 		rowFullscreen,
@@ -81,12 +82,12 @@ func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
 		rowToggle,
 	)
 
-	hint := widget.NewLabel("Click a shortcut, then press the new keys. Escape keeps the old one.")
+	hint := widget.NewLabel(i18n.T("Click a shortcut, then press the new keys. Escape keeps the old one."))
 	hint.Wrapping = fyne.TextWrapWord
 
 	return container.NewVScroll(container.NewVBox(
 		widget.NewSeparator(),
-		createGroup("Keyboard Bindings", content),
+		createGroup(i18n.T("Keyboard Bindings"), content),
 		container.NewPadded(hint),
 	))
 }

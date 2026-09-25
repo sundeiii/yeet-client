@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"log"
 	"os"
 	"time"
@@ -33,7 +34,7 @@ func (m *TrayManager) UploadFromClipboard() {
 
 	content := GetClipboard()
 	if content == "" {
-		m.ShowErrorNotification("Your clipboard is empty, or holds something puush can't upload.")
+		m.ShowErrorNotification(i18n.T("Your clipboard is empty, or holds something puush can't upload."))
 		return
 	}
 	m.enqueueJob(&uploadJob{Name: fmt.Sprintf("clipboard (%s).txt", timestamp), Data: []byte(content)})

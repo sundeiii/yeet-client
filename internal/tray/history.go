@@ -2,6 +2,7 @@ package tray
 
 import (
 	"fmt"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -70,7 +71,7 @@ func sameHistory(a, b []*puush.HistoryItem) bool {
 }
 
 func (m *TrayManager) BuildHistoryMenu() []*fyne.MenuItem {
-	recentUploads := fyne.NewMenuItem("Recent Uploads", func() {})
+	recentUploads := fyne.NewMenuItem(i18n.T("Recent Uploads"), func() {})
 	recentUploads.Disabled = true
 	items := []*fyne.MenuItem{recentUploads}
 
@@ -84,20 +85,20 @@ func (m *TrayManager) BuildHistoryMenuItem(historyItem *puush.HistoryItem) *fyne
 	timeItem := fyne.NewMenuItem(fmt.Sprintf("Uploaded: %s", historyItem.Time.Format("2006-01-02 15:04:05")), func() {})
 	timeItem.Disabled = true
 
-	viewsItem := fyne.NewMenuItem(fmt.Sprintf("Views: %d", historyItem.Views), func() {})
+	viewsItem := fyne.NewMenuItem(i18n.T("Views: %d", historyItem.Views), func() {})
 	viewsItem.Disabled = true
 
-	openItem := fyne.NewMenuItem("Open in browser", func() {
+	openItem := fyne.NewMenuItem(i18n.T("Open in browser"), func() {
 		if u, err := url.Parse(historyItem.Url); err == nil {
 			fyne.CurrentApp().OpenURL(u)
 		}
 	})
 
-	copyItem := fyne.NewMenuItem("Copy link to clipboard", func() {
+	copyItem := fyne.NewMenuItem(i18n.T("Copy link to clipboard"), func() {
 		fyne.CurrentApp().Clipboard().SetContent(historyItem.Url)
 	})
 
-	deleteItem := fyne.NewMenuItem("Delete", func() {
+	deleteItem := fyne.NewMenuItem(i18n.T("Delete"), func() {
 		go func() {
 			newHistory, err := m.api.Delete(historyItem.Id)
 			if err != nil {
@@ -117,9 +118,9 @@ func (m *TrayManager) BuildHistoryMenuItem(historyItem *puush.HistoryItem) *fyne
 	// Screenshots saved locally, and files uploaded from disk
 	if localCopy := m.config.Capture.LocalCopies[historyItem.Url]; localCopy != "" {
 		if _, err := os.Stat(localCopy); err == nil {
-			items = append(items, fyne.NewMenuItem("Show in Folder", func() {
+			items = append(items, fyne.NewMenuItem(i18n.T("Show in Folder"), func() {
 				if err := ShowInFolder(localCopy); err != nil {
-					m.ShowErrorNotification("Could not open the folder.")
+					m.ShowErrorNotification(i18n.T("Could not open the folder."))
 				}
 			}))
 		}
@@ -140,7 +141,7 @@ func historyLabel(item *puush.HistoryItem, now time.Time) string {
 		name = string(runes[:25]) + "…" + string(runes[len(runes)-12:])
 	}
 
-	when := item.Time.Format("Jan 2")
+	when := i18n.ShortDate(item.Time)
 	if y, m, d := item.Time.Date(); y == now.Year() && m == now.Month() && d == now.Day() {
 		when = item.Time.Format("15:04")
 	}

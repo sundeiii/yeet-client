@@ -5,6 +5,7 @@ package screenshots
 import (
 	"errors"
 	"fmt"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"image"
 	"runtime"
 	"sync"
@@ -549,7 +550,7 @@ func renderSelector(state *selectionState) {
 		if width > 0 && height > 0 {
 			bitBlt(back, left, top, width, height, f.brightDC, left, top, srccopy)
 			drawRectangle(back, f.selectionPen, left, top, left+width, top+height)
-			drawLabel(back, f, fmt.Sprintf("%d × %d  ·  click to capture", width, height), left+4, top+4)
+			drawLabel(back, f, i18n.T("%d × %d  ·  click to capture", width, height), left+4, top+4)
 		}
 	}
 

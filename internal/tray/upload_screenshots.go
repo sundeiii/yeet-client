@@ -3,6 +3,7 @@ package tray
 import (
 	"bytes"
 	"fmt"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"image"
 	"io"
 	"log"
@@ -58,7 +59,7 @@ func (m *TrayManager) delayedCapture(kind captureKind) {
 	// The tray icon counts down; a notification would end up in the screenshot
 	delay := m.config.Capture.Delay()
 	for remaining := delay; remaining > 0; remaining -= time.Second {
-		m.OnTrayProgressUpdate(100*remaining.Seconds()/delay.Seconds(), fmt.Sprintf("puush: capturing in %d...", int(remaining.Seconds())))
+		m.OnTrayProgressUpdate(100*remaining.Seconds()/delay.Seconds(), i18n.T("puush: capturing in %d...", int(remaining.Seconds())))
 		time.Sleep(time.Second)
 	}
 	fyne.Do(m.ResetTrayIcon)
@@ -69,7 +70,7 @@ func (m *TrayManager) delayedCapture(kind captureKind) {
 func (m *TrayManager) captureAndUpload(kind captureKind) {
 	provider := m.GetScreenshotProvider()
 	if provider == nil {
-		m.ShowErrorNotification("No screenshot provider available. Please install a compatible screenshot tool to use this feature!")
+		m.ShowErrorNotification(i18n.T("No screenshot provider available. Please install a compatible screenshot tool to use this feature!"))
 		return
 	}
 
@@ -91,10 +92,10 @@ func (m *TrayManager) captureAndUpload(kind captureKind) {
 		area, known := m.lastArea()
 		switch {
 		case !supported:
-			m.ShowErrorNotification(fmt.Sprintf("Capturing the last area again doesn't work with the %s screenshot provider.", provider.Name()))
+			m.ShowErrorNotification(i18n.T("Capturing the last area again doesn't work with the %s screenshot provider.", provider.Name()))
 			return
 		case !known:
-			m.ShowNotification("No area yet", "Capture an area first. After that, this captures the same area again.")
+			m.ShowNotification(i18n.T("No area yet"), i18n.T("Capture an area first. After that, this captures the same area again."))
 			return
 		}
 		reader, err = regions.CaptureRegion(area)
@@ -102,7 +103,7 @@ func (m *TrayManager) captureAndUpload(kind captureKind) {
 
 	if err != nil {
 		if !isCancelledError(err) {
-			m.ShowErrorNotification("An error occurred while capturing the screenshot. Please try again.")
+			m.ShowErrorNotification(i18n.T("An error occurred while capturing the screenshot. Please try again."))
 		}
 		log.Printf("Error capturing screenshot: %v", err)
 		return
@@ -111,7 +112,7 @@ func (m *TrayManager) captureAndUpload(kind captureKind) {
 
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		m.ShowErrorNotification("An error occurred while capturing the screenshot. Please try again.")
+		m.ShowErrorNotification(i18n.T("An error occurred while capturing the screenshot. Please try again."))
 		return
 	}
 

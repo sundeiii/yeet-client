@@ -4,6 +4,8 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/sundeiii/yeet-client/internal/i18n"
 )
 
 // Tabs of the app window, in order
@@ -66,15 +68,15 @@ func (ui *UI) showWindow(tab int) {
 	aboutView := ui.buildAboutTab()
 
 	tabs = container.NewAppTabs(
-		container.NewTabItem("Home", homeView),
-		container.NewTabItem("Uploads", uploadsView.content),
-		container.NewTabItem("Queue", queueView.content),
-		container.NewTabItem("General", generalView),
-		container.NewTabItem("Key Bindings", keyBindingsView),
-		container.NewTabItem("Account", accountView),
-		container.NewTabItem("Update", updateView),
-		container.NewTabItem("Advanced", advancedView),
-		container.NewTabItem("About", aboutView),
+		container.NewTabItem(i18n.T("Home"), homeView),
+		container.NewTabItem(i18n.T("Uploads"), uploadsView.content),
+		container.NewTabItem(i18n.T("Queue"), queueView.content),
+		container.NewTabItem(i18n.T("General"), generalView),
+		container.NewTabItem(i18n.T("Key Bindings"), keyBindingsView),
+		container.NewTabItem(i18n.T("Account"), accountView),
+		container.NewTabItem(i18n.T("Update"), updateView),
+		container.NewTabItem(i18n.T("Advanced"), advancedView),
+		container.NewTabItem(i18n.T("About"), aboutView),
 	)
 	tabs.OnSelected = func(item *container.TabItem) {
 		if item.Content == uploadsView.content {

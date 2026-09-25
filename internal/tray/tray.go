@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"log"
 	"net/url"
 	"sync"
@@ -157,7 +158,7 @@ func (m *TrayManager) ShowUploadNotification(url string, preview []byte) {
 		if m.config.General.NotifyPreview && len(preview) > 0 {
 			icon = preview
 		}
-		notification := notifications.NewNotification("puush complete!", "", url).
+		notification := notifications.NewNotification(i18n.T("puush complete!"), "", url).
 			WithIconData(icon).
 			WithAction(url)
 		// The app plays its own sound (or none); only "system" leaves it to the system
@@ -173,7 +174,7 @@ func (m *TrayManager) ShowUploadNotification(url string, preview []byte) {
 
 // ShowErrorNotification will display an error notification with the provided message
 func (m *TrayManager) ShowErrorNotification(message string) {
-	go notifications.NewNotification("puush error", "", message).
+	go notifications.NewNotification(i18n.T("puush error"), "", message).
 		WithIconData(assets.PuushErrorIconData).
 		Push()
 }
@@ -185,9 +186,9 @@ func (m *TrayManager) TogglePuushing() {
 	m.stateChanged()
 
 	if m.config.General.DisabledToggle {
-		m.ShowNotification("puush was disabled!", "Shortcut keys will no longer be accepted.")
+		m.ShowNotification(i18n.T("puush was disabled!"), i18n.T("Shortcut keys will no longer be accepted."))
 	} else {
-		m.ShowNotification("puush was enabled!", "Shortcut keys will now be accepted.")
+		m.ShowNotification(i18n.T("puush was enabled!"), i18n.T("Shortcut keys will now be accepted."))
 	}
 }
 
@@ -228,7 +229,7 @@ func (m *TrayManager) Initialize(applicationName string) error {
 	err := clipboard.Init()
 	if err != nil {
 		log.Printf("Error initializing clipboard: %v", err)
-		m.ShowErrorNotification("Failed to initialize the clipboard. You may encounter issues when using this feature.")
+		m.ShowErrorNotification(i18n.T("Failed to initialize the clipboard. You may encounter issues when using this feature."))
 	}
 	return nil
 }
@@ -251,13 +252,13 @@ func (m *TrayManager) rebuildMenuItems() {
 	puushVersion := fyne.NewMenuItem(m.buildString(), func() {})
 	puushVersion.Disabled = true
 
-	openApp := fyne.NewMenuItem("Open puush", func() {
+	openApp := fyne.NewMenuItem(i18n.T("Open puush"), func() {
 		if m.openCallback != nil {
 			m.openCallback()
 		}
 	})
 
-	accountSettings := fyne.NewMenuItem("My Account", func() {
+	accountSettings := fyne.NewMenuItem(i18n.T("My Account"), func() {
 		if !m.api.Account.Credentials.HasApiKey() {
 			return
 		}
@@ -278,7 +279,7 @@ func (m *TrayManager) rebuildMenuItems() {
 	}
 
 	if name, uploading := m.ActiveUpload(); uploading {
-		items = append(items, fyne.NewMenuItem("Cancel Upload ("+escapeMenuLabel(name)+")", m.CancelUpload))
+		items = append(items, fyne.NewMenuItem(i18n.T("Cancel Upload (%s)", escapeMenuLabel(name)), m.CancelUpload))
 	}
 	if failed := m.buildFailedMenu(); failed != nil {
 		items = append(items, failed)
@@ -289,53 +290,53 @@ func (m *TrayManager) rebuildMenuItems() {
 	items = append(items, m.BuildHistoryMenu()...)
 	items = append(items, fyne.NewMenuItemSeparator())
 
-	captureWindow := fyne.NewMenuItem("Capture Current Window", func() {
+	captureWindow := fyne.NewMenuItem(i18n.T("Capture Current Window"), func() {
 		go m.UploadWindowScreenshot()
 	})
 	captureWindow.Icon = windowIcon
-	captureDesktop := fyne.NewMenuItem("Capture Desktop", func() {
+	captureDesktop := fyne.NewMenuItem(i18n.T("Capture Desktop"), func() {
 		go m.UploadDesktopScreenshot()
 	})
 	captureDesktop.Icon = fullscreenIcon
-	captureArea := fyne.NewMenuItem("Capture Area", func() {
+	captureArea := fyne.NewMenuItem(i18n.T("Capture Area"), func() {
 		go m.UploadAreaScreenshot()
 	})
 	captureArea.Icon = selectionIcon
-	editArea := fyne.NewMenuItem("Capture Area and Edit", func() {
+	editArea := fyne.NewMenuItem(i18n.T("Capture Area and Edit"), func() {
 		go m.EditAreaScreenshot()
 	})
 	editArea.Icon = selectionIcon
-	captureLastArea := fyne.NewMenuItem("Capture Last Area Again", func() {
+	captureLastArea := fyne.NewMenuItem(i18n.T("Capture Last Area Again"), func() {
 		go m.UploadLastAreaScreenshot()
 	})
 	captureLastArea.Icon = selectionIcon
 	captureLastArea.Disabled = !m.HasLastArea()
 
 	seconds := int(m.config.Capture.Delay().Seconds())
-	delayed := fyne.NewMenuItem(fmt.Sprintf("Capture in %d Seconds", seconds), nil)
+	delayed := fyne.NewMenuItem(i18n.T("Capture in %d Seconds", seconds), nil)
 	delayed.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("Area", func() { go m.DelayedAreaScreenshot() }),
-		fyne.NewMenuItem("Desktop", func() { go m.DelayedDesktopScreenshot() }),
-		fyne.NewMenuItem("Current Window", func() { go m.DelayedWindowScreenshot() }),
+		fyne.NewMenuItem(i18n.T("Area"), func() { go m.DelayedAreaScreenshot() }),
+		fyne.NewMenuItem(i18n.T("Desktop"), func() { go m.DelayedDesktopScreenshot() }),
+		fyne.NewMenuItem(i18n.T("Current Window"), func() { go m.DelayedWindowScreenshot() }),
 	)
 
-	uploadFile := fyne.NewMenuItem("Upload File", m.UploadFileFromDialog)
+	uploadFile := fyne.NewMenuItem(i18n.T("Upload File"), m.UploadFileFromDialog)
 	uploadFile.Icon = uploadIcon
-	uploadClipboard := fyne.NewMenuItem("Upload Clipboard", func() {
+	uploadClipboard := fyne.NewMenuItem(i18n.T("Upload Clipboard"), func() {
 		go m.UploadFromClipboard()
 	})
 	uploadClipboard.Icon = clipboardIcon
 
-	queueWindow := fyne.NewMenuItem("Upload Queue...", func() {
+	queueWindow := fyne.NewMenuItem(i18n.T("Upload Queue..."), func() {
 		if m.queueCallback != nil {
 			m.queueCallback()
 		}
 	})
 
-	disablePuushing := fyne.NewMenuItem("Disable puushing", m.TogglePuushing)
+	disablePuushing := fyne.NewMenuItem(i18n.T("Disable puushing"), m.TogglePuushing)
 	disablePuushing.Checked = m.config.General.DisabledToggle
 
-	settings := fyne.NewMenuItem("Settings...", func() {
+	settings := fyne.NewMenuItem(i18n.T("Settings..."), func() {
 		if m.settingsCallback != nil {
 			m.settingsCallback()
 		}
@@ -381,7 +382,7 @@ func (m *TrayManager) buildFailedMenu() *fyne.MenuItem {
 	var items []*fyne.MenuItem
 	for i, name := range names {
 		if i == 10 {
-			more := fyne.NewMenuItem(fmt.Sprintf("and %d more", len(names)-10), func() {})
+			more := fyne.NewMenuItem(i18n.T("and %d more", len(names)-10), func() {})
 			more.Disabled = true
 			items = append(items, more)
 			break
@@ -392,11 +393,11 @@ func (m *TrayManager) buildFailedMenu() *fyne.MenuItem {
 	}
 	items = append(items,
 		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Retry All", func() { go m.RetryFailedUploads() }),
-		fyne.NewMenuItem("Discard All", func() { go m.DiscardFailedUploads() }),
+		fyne.NewMenuItem(i18n.T("Retry All"), func() { go m.RetryFailedUploads() }),
+		fyne.NewMenuItem(i18n.T("Discard All"), func() { go m.DiscardFailedUploads() }),
 	)
 
-	menu := fyne.NewMenuItem(fmt.Sprintf("Failed Uploads (%d)", len(names)), nil)
+	menu := fyne.NewMenuItem(i18n.T("Failed Uploads (%d)", len(names)), nil)
 	menu.ChildMenu = fyne.NewMenu("", items...)
 	return menu
 }

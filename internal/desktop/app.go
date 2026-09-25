@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"log"
 	"time"
 
@@ -103,7 +104,7 @@ func (ui *UI) Run() {
 
 		if ui.tray.GetScreenshotProvider() == nil {
 			log.Println("No valid screenshot provider could be set")
-			ui.tray.ShowErrorNotification("Could not find a screenshot provider. Screenshots may not work properly.")
+			ui.tray.ShowErrorNotification(i18n.T("Could not find a screenshot provider. Screenshots may not work properly."))
 		}
 
 		ui.hotkeys.Start()

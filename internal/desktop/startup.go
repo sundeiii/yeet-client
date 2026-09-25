@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"github.com/sundeiii/yeet-client/internal/i18n"
 	"image/color"
 	"net/url"
 
@@ -25,7 +26,7 @@ func (ui *UI) ShowStartupWindow() {
 		return
 	}
 
-	w := ui.app.NewWindow("puush quick start")
+	w := ui.app.NewWindow(i18n.T("puush quick start"))
 	w.SetOnClosed(func() { ui.startupWindow = nil })
 	w.SetFixedSize(true)
 	w.SetIcon(puushIcon)
@@ -42,17 +43,18 @@ func (ui *UI) ShowStartupWindow() {
 	bgImage.SetMinSize(fyne.NewSize(640, 540))
 
 	// Create button to link to account page
-	registerBtn := NewBorderedButton("Take me to the account creation page!", func() {
+	registerBtn := NewBorderedButton(i18n.T("Take me to the account creation page!"), func() {
 		OpenBrowser(registerUrl)
 	})
 	registerBtn.Move(fyne.NewPos(200, 138))
 	registerBtn.Resize(fyne.NewSize(250, 28))
 
-	emailLabel := canvas.NewText("Email:", color.Black)
-	emailLabel.Move(fyne.NewPos(155, 207))
+	// Right-aligned next to the boxes, since the words differ in length per language
+	emailLabel := canvas.NewText(i18n.T("Email:"), color.Black)
+	emailLabel.Move(fyne.NewPos(192-emailLabel.MinSize().Width, 207))
 
-	passwordLabel := canvas.NewText("Password:", color.Black)
-	passwordLabel.Move(fyne.NewPos(132, 237))
+	passwordLabel := canvas.NewText(i18n.T("Password:"), color.Black)
+	passwordLabel.Move(fyne.NewPos(192-passwordLabel.MinSize().Width, 237))
 
 	// Create the inputs that will be placed over the background
 	emailEntry := widget.NewEntry()
@@ -65,7 +67,7 @@ func (ui *UI) ShowStartupWindow() {
 
 	// Forgot password hyperlink
 	forgotURL, _ := url.Parse(resetUrl)
-	forgotLink := NewUnderlinedLink("Forgotten Password?", forgotURL)
+	forgotLink := NewUnderlinedLink(i18n.T("Forgotten Password?"), forgotURL)
 	forgotLink.Move(fyne.NewPos(201, 256))
 	forgotLink.Resize(forgotLink.MinSize())
 
@@ -126,7 +128,7 @@ func (ui *UI) ShowStartupWindow() {
 		fyne.Do(onLoginSuccess)
 	}
 
-	loginBtn = NewBorderedButton("Login", func() { go performLogin() })
+	loginBtn = NewBorderedButton(i18n.T("Login"), func() { go performLogin() })
 	loginBtn.Move(fyne.NewPos(370, 200))
 	loginBtn.Resize(fyne.NewSize(160, 55))
 	loginBtn.Instance.Disable()
@@ -156,10 +158,10 @@ func (ui *UI) ShowStartupWindow() {
 	)
 	bgContainer := container.NewStack(bgImage, overlayContainer)
 
-	startupCheckbox := widget.NewCheck("Start puush on startup", ui.UpdateAutostartConfiguration)
+	startupCheckbox := widget.NewCheck(i18n.T("Start puush on startup"), ui.UpdateAutostartConfiguration)
 	startupCheckbox.SetChecked(ui.config.General.Startup)
 
-	okayBtn = NewBorderedButton("Okay, I've got it!", func() {
+	okayBtn = NewBorderedButton(i18n.T("Okay, I've got it!"), func() {
 		w.Close()
 	})
 	okayBtn.Instance.Disable()
@@ -189,12 +191,12 @@ func (ui *UI) ShowStartupWindow() {
 
 func showError(err error) {
 	errorMessage := formatStartupError(err)
-	dialog.Message("%s", errorMessage).Title("puush error").Error()
+	dialog.Message("%s", errorMessage).Title(i18n.T("puush error")).Error()
 }
 
 func formatStartupError(err error) string {
 	if err == puush.PuushErrorInvalidCredentials {
-		return "The username or password you entered is incorrect."
+		return i18n.T("The username or password you entered is incorrect.")
 	}
 	return puush.FormatError(err)
 }
