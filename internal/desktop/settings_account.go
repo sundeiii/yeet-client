@@ -2,7 +2,6 @@ package desktop
 
 import (
 	"net/url"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -123,11 +122,11 @@ func (ui *UI) buildAccountDetails(updateView func()) fyne.CanvasObject {
 	expiryTime := ui.config.Account.SubscriptionExpiry()
 	expiryString := i18n.T("Never")
 	if expiryTime != nil {
-		// TODO: Check if this is the right date time format
-		expiryString = expiryTime.Format(time.DateTime)
+		expiryString = i18n.Date(expiryTime.Local())
 	}
 
-	detailsGrid := container.NewGridWithColumns(2,
+	// Labels as wide as the longest one, values right next to them
+	detailsGrid := container.New(layout.NewFormLayout(),
 		trailingLabel(i18n.T("Logged in as:")), widget.NewLabel(ui.config.Account.Username),
 		trailingLabel(i18n.T("API Key:")), widget.NewLabel(ui.config.Account.Key),
 		trailingLabel(i18n.T("Account Type:")), widget.NewLabel(accountTypeString),
@@ -143,13 +142,10 @@ func (ui *UI) buildAccountDetails(updateView func()) fyne.CanvasObject {
 		ui.Logout()
 		updateView()
 	})
-	buttons := container.NewGridWithColumns(
-		2, myAccountButton, logoutButton,
-	)
+	buttons := container.NewGridWrap(fyne.NewSize(160, 34), myAccountButton, logoutButton)
 
 	content := container.NewVBox(
-		container.NewPadded(detailsGrid),
-		widget.NewLabel(""),
+		detailsGrid,
 		container.NewPadded(buttons),
 	)
 	return createGroup(i18n.T("Account Details"), content)
