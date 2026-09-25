@@ -1,6 +1,9 @@
 package updater
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type VersionSemantic struct {
 	Major int
@@ -49,6 +52,8 @@ func NewSemanticVersion(major, minor, patch int) VersionSemantic {
 }
 
 func NewSemanticVersionFromString(versionString string) (VersionSemantic, error) {
+	// Tags may be written as v1.2.3
+	versionString = strings.TrimPrefix(versionString, "v")
 	var major, minor, patch int
 	n, err := fmt.Sscanf(versionString, "%d.%d.%d", &major, &minor, &patch)
 	if err != nil {

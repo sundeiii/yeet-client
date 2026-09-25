@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/sundeiii/yeet-client/internal/config"
@@ -23,7 +22,7 @@ func updaterLoop(cfg *config.Config, ui *desktop.UI) {
 		return
 	}
 
-	currentBranch := cfg.General.UpdateBranch
+	currentBranch := updater.BranchStable
 	currentVersion, err := currentUpdateVersion(currentBranch)
 	if err != nil {
 		log.Printf("Failed to determine current update version: %v", err)
@@ -62,7 +61,6 @@ func updaterLoop(cfg *config.Config, ui *desktop.UI) {
 
 func handleUpdateResult(result updater.CheckResult, cfg *config.Config, ui *desktop.UI) bool {
 	cfg.Misc.LastUpdate = result.CheckedAt
-	cfg.General.UpdateBranch = result.Branch
 	config.NewStore().Save(cfg) // ensure we update this before restarting
 	defer ui.FinishUpdateCheck(result.CheckedAt)
 
@@ -79,7 +77,7 @@ func handleUpdateResult(result updater.CheckResult, cfg *config.Config, ui *desk
 		if result.Manual {
 			ui.ShowNotification(
 				"No updates available",
-				fmt.Sprintf("You're already running the latest %s version.", result.Branch),
+				"You're already running the latest version ("+result.CurrentVersion.String()+").",
 			)
 		}
 		return false
@@ -109,12 +107,5 @@ func handleUpdateResult(result updater.CheckResult, cfg *config.Config, ui *desk
 }
 
 func currentUpdateVersion(branch updater.Branch) (updater.Version, error) {
-	switch branch {
-	case updater.BranchStable:
-		return updater.NewSemanticVersionFromString(AppVersion)
-	case updater.BranchNightly:
-		return updater.NewTimestampVersionFromString(AppTimestamp)
-	default:
-		return nil, fmt.Errorf("unknown update branch %q", branch)
-	}
+	return updater.NewSemanticVersionFromString(AppVersion)
 }

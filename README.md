@@ -44,6 +44,17 @@ go build -o yeet ./cmd/desktop
 
 The app uses [Fyne](https://fyne.io/), which needs a C compiler and a few system libraries. See [Fyne's prerequisites](https://docs.fyne.io/started/quick/). GitHub Actions builds every platform on each push; publishing a release attaches the binaries, and installed apps pick them up automatically.
 
+### Releasing
+
+Tag the commit and push the tag. GitHub Actions builds every platform, publishes the release with the files attached, and installed apps update to it:
+
+```bash
+git tag 1.2.0
+git push origin 1.2.0
+```
+
+The version shown in the app comes from the tag, so there's nothing to bump by hand.
+
 To point a build at a different default server:
 
 ```bash

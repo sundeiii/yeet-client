@@ -1,12 +1,12 @@
 name: Build & Release
 
+# Pushing a tag like 1.2.0 builds everything and publishes release 1.2.0
 on:
     push:
         branches: ["*"]
+        tags: ["*.*.*", "v*.*.*"]
     pull_request:
         branches: ["*"]
-    release:
-        types: [published]
 
 # Needed to attach the built apps to releases
 permissions:
@@ -76,7 +76,12 @@ jobs:
                   echo "build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
                   echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
                   echo "timestamp=$(git show -s --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
-                  echo "version=$(awk -F '"' '/AppVersion[[:space:]]+=/ {print $2; exit}' cmd/desktop/metadata.go)" >> "$GITHUB_OUTPUT"
+                  # The version comes from the tag; other builds are 0.0.0
+                  if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+                    echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "version=0.0.0" >> "$GITHUB_OUTPUT"
+                  fi
 
             - name: Generate Windows icon resource
               if: runner.os == 'Windows'
@@ -104,10 +109,11 @@ jobs:
                   APP_BUILD: ${{ steps.metadata.outputs.build }}
                   APP_COMMIT: ${{ steps.metadata.outputs.commit }}
                   APP_TIMESTAMP: ${{ steps.metadata.outputs.timestamp }}
+                  APP_VERSION: ${{ steps.metadata.outputs.version }}
               shell: bash
               run: |
                   mkdir -p build
-                  ldflags="-s -X main.AppBuild=$APP_BUILD -X main.AppCommit=$APP_COMMIT -X main.AppTimestamp=$APP_TIMESTAMP"
+                  ldflags="-s -X main.AppVersion=$APP_VERSION -X main.AppBuild=$APP_BUILD -X main.AppCommit=$APP_COMMIT -X main.AppTimestamp=$APP_TIMESTAMP"
                   if [ "$RUNNER_OS" = "Windows" ]; then
                     ldflags="$ldflags -H=windowsgui"
                   fi
@@ -184,34 +190,32 @@ jobs:
                     "$app_dir" \
                     "build/yeet-${{ matrix.name }}.app.zip"
 
+            # macOS ships as an .app bundle, the other systems as a single file
             - name: Upload Artifact
-              if: github.event_name != 'release'
               uses: actions/upload-artifact@v7
               with:
                   name: yeet-${{ matrix.name }}
-                  path: build/${{ steps.vars.outputs.filename }}
+                  path: ${{ runner.os == 'macOS' && format('build/yeet-{0}.app.zip', matrix.name) || format('build/{0}', steps.vars.outputs.filename) }}
                   retention-days: 7
 
-            - name: Upload macOS app artifact
-              if: github.event_name != 'release' && runner.os == 'macOS'
-              uses: actions/upload-artifact@v7
+    release:
+        name: Publish release
+        # Only tags publish; branch pushes just build
+        if: startsWith(github.ref, 'refs/tags/')
+        needs: build
+        runs-on: ubuntu-latest
+        steps:
+            - name: Download builds
+              uses: actions/download-artifact@v5
               with:
-                  name: yeet-${{ matrix.name }}-app
-                  path: build/yeet-${{ matrix.name }}.app.zip
-                  retention-days: 7
+                  path: dist
+                  merge-multiple: true
 
-            - name: Upload Release Asset
-              if: github.event_name == 'release'
+            - name: Publish release
               uses: softprops/action-gh-release@v3
               with:
-                  files: build/${{ steps.vars.outputs.filename }}
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-            - name: Upload macOS app release asset
-              if: github.event_name == 'release' && runner.os == 'macOS'
-              uses: softprops/action-gh-release@v3
-              with:
-                  files: build/yeet-${{ matrix.name }}.app.zip
+                  name: yeet-client ${{ github.ref_name }}
+                  generate_release_notes: true
+                  files: dist/*
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

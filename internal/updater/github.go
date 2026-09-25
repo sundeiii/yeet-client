@@ -57,8 +57,6 @@ func FetchGitHubCandidate(ctx context.Context, branch Branch) (ReleaseCandidate,
 	switch branch {
 	case BranchStable:
 		release, err = FetchGitHubRelease(ctx)
-	case BranchNightly:
-		release, err = FetchGitHubNightly(ctx)
 	default:
 		return nil, fmt.Errorf("unknown update branch %q", branch)
 	}

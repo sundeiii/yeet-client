@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/sundeiii/yeet-client/internal/screenshots"
-	"github.com/sundeiii/yeet-client/internal/updater"
 	"github.com/sundeiii/yeet-client/pkg/puush"
 )
 
@@ -74,7 +73,6 @@ type GeneralConfig struct {
 	DisabledToggle    bool
 	CopyToClipboard   bool
 	AutoUpdate        bool
-	UpdateBranch      updater.Branch
 }
 
 type CaptureConfig struct {
@@ -129,12 +127,11 @@ func DefaultConfig() *Config {
 			ContextMenu:       true,
 			DisabledToggle:    false,
 			AutoUpdate:        true,
-			UpdateBranch:      updater.BranchStable,
 		},
 		Capture: CaptureConfig{
 			UploadQuality:         screenshots.QualityBest,
 			FullscreenMode:        screenshots.FullscreenModeAllScreens,
-			SaveImages:            false,
+			SaveImages:            true,
 			SaveImagesToClipboard: false,
 			SaveImagePath:         "",
 			MonitorDirectories:    []string{},

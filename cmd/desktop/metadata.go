@@ -11,15 +11,15 @@ import (
 const (
 	AppName     = "puush"
 	AppID       = "ee.tupsujumal.yeet"
-	AppVersion  = "1.1.1"
 	AppIconName = "puush.png"
 )
 
 // Set by the build system through -ldflags -X
 var (
-	AppBuild     = "0"   // Number of current commits
-	AppCommit    = "dev" // Current commit sha
-	AppTimestamp = "0"   // Unix timestamp of the current commit
+	AppVersion   = "0.0.0" // Release tag, e.g. 1.2.0; untagged builds update to the latest release
+	AppBuild     = "0"     // Number of current commits
+	AppCommit    = "dev"   // Current commit sha
+	AppTimestamp = "0"     // Unix timestamp of the current commit
 )
 
 func init() {
