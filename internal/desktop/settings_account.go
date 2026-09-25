@@ -1,7 +1,6 @@
 package desktop
 
 import (
-	"fmt"
 	"net/url"
 	"time"
 
@@ -135,8 +134,8 @@ func (ui *UI) buildAccountDetails(updateView func()) fyne.CanvasObject {
 	)
 
 	myAccountButton := NewBorderedButton("My Account", func() {
-		path := fmt.Sprintf("/login/go/?k=%s", ui.config.Account.Key)
-		OpenBrowser(ui.api.FormatURL(path))
+		// Asks the server for a one-time login link, so don't block the window
+		go OpenBrowser(ui.api.AccountLink())
 	})
 	logoutButton := NewBorderedButton("Logout", func() {
 		ui.config.Account.Reset()

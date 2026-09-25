@@ -171,9 +171,14 @@ func (m *TrayManager) rebuildMenuItems() {
 		if !m.api.Account.Credentials.HasApiKey() {
 			return
 		}
-		path := fmt.Sprintf("/login/go/?k=%s", *m.api.Account.Credentials.Key)
-		accountUrl, _ := url.Parse(m.api.FormatURL(path))
-		fyne.CurrentApp().OpenURL(accountUrl)
+		// Fetching the one-time login link is a network call; open it once it's there
+		go func() {
+			accountUrl, err := url.Parse(m.api.AccountLink())
+			if err != nil {
+				return
+			}
+			fyne.Do(func() { fyne.CurrentApp().OpenURL(accountUrl) })
+		}()
 	})
 
 	items := []*fyne.MenuItem{
