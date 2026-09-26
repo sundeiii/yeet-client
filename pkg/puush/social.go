@@ -53,7 +53,8 @@ type ChatMessage struct {
 	Id    int        `json:"id"`
 	Mine  bool       `json:"mine"`
 	Text  string     `json:"text"`
-	Time  string     `json:"time"`
+	Time  string     `json:"time"`  // in the server's clock; see At
+	At    int64      `json:"at"`    // Unix seconds, 0 on older servers
 	File  *ChatFile  `json:"file"`  // a file sent with the message, if any
 	Reply *ChatReply `json:"reply"` // the message this one answers, if any
 	// Changed afterwards, or taken back by the sender

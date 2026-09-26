@@ -58,6 +58,7 @@ type messagesView struct {
 	placeholder fyne.CanvasObject
 	chatPane    fyne.CanvasObject
 	title       *widget.Label
+	titles      *fyne.Container // the name and online status, one line
 	presence    *canvas.Text
 	profile     *widget.Hyperlink
 	thread      *fyne.Container
@@ -82,6 +83,10 @@ type messagesView struct {
 	names    map[string]string // display names, for "Replying to Mika"
 	// Where the thread was scrolled to, kept while it's loaded again
 	keepOffset *fyne.Position
+	// The other person's online status, shown again every minute so
+	// "Last online just now" keeps up with the time
+	lastPresence *puush.Presence
+	stopTicker   chan struct{}
 
 	thumbs map[string]fyne.Resource // previews of files in chats
 
@@ -167,7 +172,8 @@ func (ui *UI) buildMessagesTab() *messagesView {
 	v.composeBar.Hide()
 
 	// The name, and on the same line whether they're online
-	titles := container.NewHBox(v.title, container.NewCenter(v.presence))
+	v.titles = container.NewHBox(v.title, container.NewCenter(v.presence))
+	titles := v.titles
 	header := container.NewBorder(nil, widget.NewSeparator(), nil, v.profile, titles)
 	footer := container.NewVBox(v.typing, v.problem, v.composeBar, container.NewBorder(nil, nil, v.attach, v.send, v.entry))
 	v.chatPane = container.NewBorder(header, footer, nil, nil, v.scroll)
@@ -197,12 +203,64 @@ func (v *messagesView) show() {
 	if v.with != "" {
 		v.ui.tray.SetOpenChat(v.with)
 		v.fetchNew()
+		v.scrollToNewest()
 	}
+	if v.stopTicker == nil {
+		stop := make(chan struct{})
+		v.stopTicker = stop
+		go func() {
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					fyne.Do(v.tick)
+				case <-stop:
+					return
+				}
+			}
+		}()
+	}
+}
+
+// tick runs every minute while the chats show: the online status keeps up
+// with the time, and anything missed is loaded.
+func (v *messagesView) tick() {
+	if !v.visible || v.with == "" {
+		return
+	}
+	v.showPresence(v.lastPresence)
+	v.fetchNew()
+}
+
+// scrollToNewest shows the latest messages, now and once pictures and the
+// window's size have settled.
+func (v *messagesView) scrollToNewest() {
+	v.scroll.ScrollToBottom()
+	for _, delay := range []time.Duration{100 * time.Millisecond, 400 * time.Millisecond} {
+		generation := v.generation
+		time.AfterFunc(delay, func() {
+			fyne.Do(func() {
+				if generation == v.generation && v.keepOffset == nil {
+					v.scroll.ScrollToBottom()
+				}
+			})
+		})
+	}
+}
+
+// nearBottom tells whether the newest messages are in view.
+func (v *messagesView) nearBottom() bool {
+	return v.scroll.Offset.Y >= v.scroll.Content.MinSize().Height-v.scroll.Size().Height-40
 }
 
 // hide runs when another tab is shown or the window closes.
 func (v *messagesView) hide() {
 	v.visible = false
+	if v.stopTicker != nil {
+		close(v.stopTicker)
+		v.stopTicker = nil
+	}
 	v.ui.tray.SetOpenChat("")
 }
 
@@ -439,12 +497,15 @@ func (v *messagesView) fetchNew() {
 }
 
 func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
+	if thread.Presence != nil {
+		v.showPresence(thread.Presence)
+	}
 	if first && v.lastId == 0 {
 		// The server knows how the name is written (Lilian, not lilian)
 		v.with = thread.With
 		v.names[strings.ToLower(thread.With)] = thread.Name
 		v.title.SetText(thread.Name)
-		v.showPresence(thread.Presence)
+		v.titles.Refresh()
 		v.seen = nil
 		v.lastMine = false
 		v.setProfileLink(thread.With)
@@ -496,7 +557,7 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 			v.scroll.Offset = *v.keepOffset
 			v.scroll.Refresh()
 		} else {
-			v.scroll.ScrollToBottom()
+			v.scrollToNewest()
 		}
 		if !first {
 			v.typing.Hide()
@@ -684,6 +745,15 @@ func (v *messagesView) onLive(event *puush.LiveEvent) {
 			v.reloadChatsSoon()
 		})
 
+	case "connected":
+		// Back after the connection was down: catch up
+		fyne.Do(func() {
+			if v.visible {
+				v.fetchNew()
+				v.loadChats()
+			}
+		})
+
 	case "changed":
 		var changed struct {
 			With string `json:"with"`
@@ -774,9 +844,9 @@ func (v *messagesView) messageBubble(message *puush.ChatMessage) fyne.CanvasObje
 			parts = append(parts, widget.NewLabel(wrapText(message.Text, bubbleTextWidth)))
 		}
 	}
-	stampText := message.Time
+	stampText := messageTime(message, time.Now())
 	if message.Edited && !message.Removed {
-		stampText = i18n.T("%s · edited", message.Time)
+		stampText = i18n.T("%s · edited", stampText)
 	}
 	stamp := canvas.NewText(stampText, quietTextColor)
 	stamp.TextSize = 10
@@ -790,8 +860,8 @@ func (v *messagesView) messageBubble(message *puush.ChatMessage) fyne.CanvasObje
 	background.StrokeColor = color.NRGBA{R: 220, G: 224, B: 228, A: 255}
 	background.StrokeWidth = 1
 
-	parts = append(parts, container.New(layout.NewCustomPaddedLayout(0, 6, 8, 8), stamp))
-	inner := container.New(layout.NewCustomPaddedVBoxLayout(-4), parts...)
+	parts = append(parts, container.New(layout.NewCustomPaddedLayout(0, 8, 8, 8), stamp))
+	inner := container.New(layout.NewCustomPaddedVBoxLayout(0), parts...)
 	bubble := container.NewStack(background, inner)
 	if message.Mine {
 		return container.NewHBox(layout.NewSpacer(), bubble)
@@ -830,14 +900,18 @@ func (v *messagesView) fileCard(file *puush.ChatFile) fyne.CanvasObject {
 			}
 			resource := fyne.NewStaticResource(name, data)
 			fyne.Do(func() {
+				atBottom := v.nearBottom()
 				v.thumbs[file.Thumb] = resource
 				preview.Resource = resource
 				preview.Refresh()
+				if atBottom {
+					v.scroll.ScrollToBottom()
+				}
 			})
 		}()
 	}
 
-	details := container.New(layout.NewCustomPaddedVBoxLayout(-2), name, container.New(layout.NewCustomPaddedLayout(0, 0, 8, 8), size))
+	details := container.New(layout.NewCustomPaddedVBoxLayout(2), name, container.New(layout.NewCustomPaddedLayout(0, 0, 8, 8), size))
 	if file.Kind == "image" || file.Kind == "video" {
 		return container.NewVBox(container.NewPadded(preview), details)
 	}
@@ -937,6 +1011,7 @@ func (v *messagesView) showSeen() {
 
 // showPresence shows whether the other person is online, and on what.
 func (v *messagesView) showPresence(presence *puush.Presence) {
+	v.lastPresence = presence
 	v.presence.Text = presenceText(presence, time.Now())
 	if presence != nil && presence.Online && !presence.Hidden {
 		v.presence.Color = onlineColor
@@ -944,6 +1019,7 @@ func (v *messagesView) showPresence(presence *puush.Presence) {
 		v.presence.Color = quietTextColor
 	}
 	v.presence.Refresh()
+	v.titles.Refresh() // room for the new text
 }
 
 func presenceText(presence *puush.Presence, now time.Time) string {
@@ -974,6 +1050,8 @@ func presenceText(presence *puush.Presence, now time.Time) string {
 	switch {
 	case now.Sub(seen) < time.Minute:
 		return i18n.T("Last online just now")
+	case now.Sub(seen) < time.Hour:
+		return i18n.T("Last online %d min ago", int(now.Sub(seen).Minutes()))
 	case sameDay(seen, now):
 		return i18n.T("Last online today at %s", seen.Format("15:04"))
 	case sameDay(seen, now.AddDate(0, 0, -1)):
@@ -1185,4 +1263,17 @@ func fitText(text string, width float32, size float32) string {
 		runes = runes[:len(runes)-1]
 	}
 	return string(runes) + "…"
+}
+
+// messageTime is when a message was sent, in this computer's clock: "14:05"
+// today, with the date before that.
+func messageTime(message *puush.ChatMessage, now time.Time) string {
+	if message.At <= 0 {
+		return message.Time // an older server
+	}
+	sent := time.Unix(message.At, 0).Local()
+	if sameDay(sent, now) {
+		return sent.Format("15:04")
+	}
+	return i18n.ShortDate(sent) + " " + sent.Format("15:04")
 }

@@ -79,6 +79,8 @@ func (m *TrayManager) runLive(ctx context.Context) {
 		if err == nil {
 			retry = 2 * time.Second
 			m.setLiveConnection(conn)
+			// Windows catch up on what they missed while it was down
+			m.handleLive(&puush.LiveEvent{Type: "connected"})
 			err = m.readLive(ctx, conn)
 			m.setLiveConnection(nil)
 			conn.Close()
