@@ -1,7 +1,6 @@
 package desktop
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,7 +15,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -26,14 +24,21 @@ import (
 	"github.com/sundeiii/yeet-client/pkg/puush"
 )
 
-// Chat bubbles are at most this wide; the text is wrapped to fit.
-const bubbleTextWidth = 300
+// Replies quote at most this wide.
+const quoteWidth = 420
+
+// Messages from the same person within this long are grouped under one
+// name, like in Discord.
+const groupWindow = 7 * time.Minute
 
 var (
-	myBubbleColor    = color.NRGBA{R: 214, G: 232, B: 255, A: 255}
-	theirBubbleColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	quietTextColor   = color.NRGBA{R: 110, G: 110, B: 110, A: 255}
-	onlineColor      = color.NRGBA{R: 46, G: 160, B: 67, A: 255}
+	quietTextColor  = color.NRGBA{R: 110, G: 110, B: 110, A: 255}
+	hoverColor      = color.NRGBA{R: 0, G: 0, B: 0, A: 12}
+	cardColor       = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	cardBorderColor = color.NRGBA{R: 220, G: 224, B: 228, A: 255}
+	otherNameColor  = color.NRGBA{R: 0, G: 102, B: 204, A: 255}
+	ownNameColor    = color.NRGBA{R: 30, G: 30, B: 30, A: 255}
+	onlineColor     = color.NRGBA{R: 46, G: 160, B: 67, A: 255}
 )
 
 // messagesView is the app window's chats: the list on the left, the open
@@ -92,6 +97,10 @@ type messagesView struct {
 
 	avatars   map[string]fyne.Resource
 	requested map[string]bool
+	// Avatars in the thread waiting for their picture to download
+	avatarImages map[string][]*canvas.Image
+	// The message shown last, to group the next one under the same name
+	prev *puush.ChatMessage
 
 	visible     bool
 	reloadTimer *time.Timer
@@ -105,6 +114,8 @@ func (ui *UI) buildMessagesTab() *messagesView {
 		requested: map[string]bool{},
 		thumbs:    map[string]fyne.Resource{},
 		names:     map[string]string{},
+
+		avatarImages: map[string][]*canvas.Image{},
 	}
 
 	// Left: the chats, and a box to start one
@@ -145,7 +156,7 @@ func (ui *UI) buildMessagesTab() *messagesView {
 	v.profile = widget.NewHyperlink(i18n.T("Profile"), nil)
 	v.presence = canvas.NewText("", quietTextColor)
 	v.presence.TextSize = 11
-	v.thread = container.NewVBox()
+	v.thread = container.New(layout.NewCustomPaddedVBoxLayout(0))
 	v.scroll = container.NewVScroll(container.NewPadded(v.thread))
 	v.typing = widget.NewLabel("")
 	v.typing.Importance = widget.LowImportance
@@ -356,6 +367,11 @@ func (v *messagesView) avatar(link string) fyne.Resource {
 			fyne.Do(func() {
 				v.avatars[link] = resource
 				v.list.Refresh()
+				for _, image := range v.avatarImages[link] {
+					image.Resource = resource
+					image.Refresh()
+				}
+				delete(v.avatarImages, link)
 			})
 		}()
 	}
@@ -428,6 +444,7 @@ func (v *messagesView) openChat(name string) {
 	v.with = name
 	v.lastId = 0
 	v.thread.RemoveAll()
+	v.prev = nil
 	v.seen = nil
 	v.lastMine = false
 	v.stopComposing()
@@ -508,6 +525,7 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 		v.titles.Refresh()
 		v.seen = nil
 		v.lastMine = false
+		v.prev = nil
 		v.setProfileLink(thread.With)
 		if v.visible {
 			v.ui.tray.SetOpenChat(thread.With)
@@ -532,7 +550,7 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 			v.seen = nil
 		}
 		v.lastId = message.Id
-		v.thread.Add(v.messageRow(message))
+		v.addMessage(message)
 		v.lastMine = message.Mine
 		if message.Mine && message.Seen {
 			v.showSeen()
@@ -823,106 +841,6 @@ func (v *messagesView) onLive(event *puush.LiveEvent) {
 	}
 }
 
-// messageBubble is one message: on the right for the user's own, on the
-// left for the other person's.
-func (v *messagesView) messageBubble(message *puush.ChatMessage) fyne.CanvasObject {
-	parts := []fyne.CanvasObject{}
-	switch {
-	case message.Removed:
-		gone := widget.NewLabel(i18n.T("Message deleted"))
-		gone.TextStyle = fyne.TextStyle{Italic: true}
-		gone.Importance = widget.LowImportance
-		parts = append(parts, gone)
-	default:
-		if message.Reply != nil {
-			parts = append(parts, v.replyQuote(message.Reply))
-		}
-		if message.File != nil {
-			parts = append(parts, v.fileCard(message.File))
-		}
-		if message.Text != "" || message.File == nil {
-			parts = append(parts, widget.NewLabel(wrapText(message.Text, bubbleTextWidth)))
-		}
-	}
-	stampText := messageTime(message, time.Now())
-	if message.Edited && !message.Removed {
-		stampText = i18n.T("%s · edited", stampText)
-	}
-	stamp := canvas.NewText(stampText, quietTextColor)
-	stamp.TextSize = 10
-
-	background := canvas.NewRectangle(theirBubbleColor)
-	if message.Mine {
-		background.FillColor = myBubbleColor
-		stamp.Alignment = fyne.TextAlignTrailing
-	}
-	background.CornerRadius = 8
-	background.StrokeColor = color.NRGBA{R: 220, G: 224, B: 228, A: 255}
-	background.StrokeWidth = 1
-
-	parts = append(parts, container.New(layout.NewCustomPaddedLayout(0, 8, 8, 8), stamp))
-	inner := container.New(layout.NewCustomPaddedVBoxLayout(0), parts...)
-	bubble := container.NewStack(background, inner)
-	if message.Mine {
-		return container.NewHBox(layout.NewSpacer(), bubble)
-	}
-	return container.NewHBox(bubble, layout.NewSpacer())
-}
-
-// fileCard is a file sent in a chat: a preview for pictures and videos,
-// and its name (which opens it) and size.
-func (v *messagesView) fileCard(file *puush.ChatFile) fyne.CanvasObject {
-	link, _ := url.Parse(file.Url)
-	name := widget.NewHyperlink(file.Name, link)
-	name.Truncation = fyne.TextTruncateEllipsis
-	size := canvas.NewText(file.Size, quietTextColor)
-	size.TextSize = 11
-
-	preview := canvas.NewImageFromResource(theme.FileIcon())
-	preview.FillMode = canvas.ImageFillContain
-	if file.Kind == "image" || file.Kind == "video" {
-		preview.SetMinSize(fyne.NewSize(bubbleTextWidth*0.7, 150))
-	} else {
-		preview.SetMinSize(fyne.NewSquareSize(40))
-	}
-	if resource, ok := v.thumbs[file.Thumb]; ok {
-		preview.Resource = resource
-	} else if file.Thumb != "" {
-		go func() {
-			data, err := v.ui.api.Picture(file.Thumb)
-			if err != nil {
-				return
-			}
-			// File icons are SVG pictures
-			name := "thumb"
-			if bytes.HasPrefix(bytes.TrimSpace(data), []byte("<svg")) || bytes.HasPrefix(bytes.TrimSpace(data), []byte("<?xml")) {
-				name = "thumb.svg"
-			}
-			resource := fyne.NewStaticResource(name, data)
-			fyne.Do(func() {
-				atBottom := v.nearBottom()
-				v.thumbs[file.Thumb] = resource
-				preview.Resource = resource
-				preview.Refresh()
-				if atBottom {
-					v.scroll.ScrollToBottom()
-				}
-			})
-		}()
-	}
-
-	details := container.New(layout.NewCustomPaddedVBoxLayout(2), name, container.New(layout.NewCustomPaddedLayout(0, 0, 8, 8), size))
-	if file.Kind == "image" || file.Kind == "video" {
-		return container.NewVBox(container.NewPadded(preview), details)
-	}
-	// A bubble is only as wide as what's in it, and a name that's cut short
-	// asks for no room at all, so the card keeps a width of its own
-	width := min(fyne.MeasureText(file.Name, theme.TextSize(), fyne.TextStyle{}).Width+90, bubbleTextWidth)
-	sizer := canvas.NewRectangle(color.Transparent)
-	sizer.SetMinSize(fyne.NewSize(max(width, 180), 0))
-	return container.NewStack(sizer, container.NewBorder(nil, nil, container.NewPadded(preview), nil, details))
-}
-
 func quietLabel(text string) fyne.CanvasObject {
 	label := widget.NewLabel(text)
 	label.Importance = widget.LowImportance
@@ -1001,14 +919,6 @@ func (v *messagesView) reload() {
 	v.fetchNew()
 }
 
-func (v *messagesView) showSeen() {
-	label := canvas.NewText(i18n.T("Seen"), quietTextColor)
-	label.TextSize = 10
-	label.Alignment = fyne.TextAlignTrailing
-	v.seen = container.New(layout.NewCustomPaddedLayout(-6, 0, 0, 10), label)
-	v.thread.Add(v.seen)
-}
-
 // showPresence shows whether the other person is online, and on what.
 func (v *messagesView) showPresence(presence *puush.Presence) {
 	v.lastPresence = presence
@@ -1067,60 +977,6 @@ func sameDay(a, b time.Time) bool {
 }
 
 // ---- Answering and changing messages ----
-
-// messageRow is a message with its menu: right-click it, or the "..."
-// button that shows while the mouse is over it.
-type messageRow struct {
-	widget.BaseWidget
-
-	content fyne.CanvasObject
-	more    *widget.Button
-	menu    *fyne.Menu
-}
-
-var _ desktop.Hoverable = (*messageRow)(nil)
-
-func (v *messagesView) messageRow(message *puush.ChatMessage) fyne.CanvasObject {
-	bubble := v.messageBubble(message)
-	menu := v.messageMenu(message)
-	if menu == nil {
-		if message.Mine {
-			return container.NewHBox(layout.NewSpacer(), bubble)
-		}
-		return container.NewHBox(bubble, layout.NewSpacer())
-	}
-	row := &messageRow{menu: menu}
-	row.more = widget.NewButtonWithIcon("", theme.MoreHorizontalIcon(), func() {
-		row.showMenu(fyne.CurrentApp().Driver().AbsolutePositionForObject(row.more).AddXY(0, row.more.Size().Height))
-	})
-	row.more.Importance = widget.LowImportance
-	row.more.Hide()
-	if message.Mine {
-		row.content = container.NewHBox(layout.NewSpacer(), container.NewCenter(row.more), bubble)
-	} else {
-		row.content = container.NewHBox(bubble, container.NewCenter(row.more), layout.NewSpacer())
-	}
-	row.ExtendBaseWidget(row)
-	return row
-}
-
-func (row *messageRow) CreateRenderer() fyne.WidgetRenderer {
-	return widget.NewSimpleRenderer(row.content)
-}
-
-func (row *messageRow) TappedSecondary(event *fyne.PointEvent) {
-	row.showMenu(event.AbsolutePosition)
-}
-
-func (row *messageRow) showMenu(at fyne.Position) {
-	if canvas := fyne.CurrentApp().Driver().CanvasForObject(row); canvas != nil {
-		widget.ShowPopUpMenuAtPosition(row.menu, canvas, at)
-	}
-}
-
-func (row *messageRow) MouseIn(*desktop.MouseEvent)    { row.more.Show() }
-func (row *messageRow) MouseMoved(*desktop.MouseEvent) {}
-func (row *messageRow) MouseOut()                      { row.more.Hide() }
 
 // messageMenu is what can be done with a message; nil for deleted ones.
 func (v *messagesView) messageMenu(message *puush.ChatMessage) *fyne.Menu {
@@ -1212,27 +1068,6 @@ func (v *messagesView) displayName() string {
 		return name
 	}
 	return v.with
-}
-
-// replyQuote shows the message a reply answers, in short.
-func (v *messagesView) replyQuote(reply *puush.ChatReply) fyne.CanvasObject {
-	name := v.displayName()
-	if reply.Mine {
-		name = i18n.T("You")
-	}
-	text := reply.Text
-	if reply.Removed {
-		text = i18n.T("Message deleted")
-	}
-	who := canvas.NewText(name, theme.Color(theme.ColorNamePrimary))
-	who.TextSize = 11
-	what := canvas.NewText(fitText(oneLine(text), bubbleTextWidth-24, 11), quietTextColor)
-	what.TextSize = 11
-	line := canvas.NewRectangle(theme.Color(theme.ColorNamePrimary))
-	line.SetMinSize(fyne.NewSize(3, 0))
-	lines := container.New(layout.NewCustomPaddedVBoxLayout(0), who, what)
-	return container.New(layout.NewCustomPaddedLayout(6, 0, 8, 8),
-		container.NewBorder(nil, nil, line, nil, container.New(layout.NewCustomPaddedLayout(0, 0, 6, 0), lines)))
 }
 
 // messageSummary is a message in a few words, for the reply bar.
