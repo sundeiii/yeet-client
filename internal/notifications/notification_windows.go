@@ -3,11 +3,49 @@ package notifications
 import (
 	"bytes"
 	"encoding/xml"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"syscall"
+
+	"golang.org/x/sys/windows/registry"
+
+	"github.com/sundeiii/yeet-client/assets"
 )
+
+// appUserModelId is how Windows knows the app. Registered with a name and
+// an icon, notifications get "puush" and the puush icon at the top, like
+// installed apps have.
+const appUserModelId = "sundei.yeet.puush"
+
+var registerOnce sync.Once
+
+// register tells Windows the app's name and icon for its notifications,
+// in the user's part of the registry.
+func register() {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return
+	}
+	icon := filepath.Join(dir, "yeet", "notification-icon.png")
+	if err := os.MkdirAll(filepath.Dir(icon), 0o755); err != nil {
+		return
+	}
+	if err := os.WriteFile(icon, assets.PuushIconData, 0o644); err != nil {
+		log.Printf("Error saving the notification icon: %v", err)
+		return
+	}
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, `Software\Classes\AppUserModelId\`+appUserModelId, registry.SET_VALUE)
+	if err != nil {
+		log.Printf("Error registering for notifications: %v", err)
+		return
+	}
+	defer key.Close()
+	key.SetStringValue("DisplayName", "puush")
+	key.SetStringValue("IconUri", icon)
+}
 
 // Windows shows toasts through a small PowerShell script. The script never
 // changes: the texts (which can come from other people, like chat
@@ -30,10 +68,8 @@ func (n *Notification) Push() error {
 	}
 	defer os.RemoveAll(dir)
 
-	appId := n.Application
-	if appId == "" {
-		appId = "puush"
-	}
+	registerOnce.Do(register)
+	appId := appUserModelId
 	script := filepath.Join(dir, "toast.ps1")
 	appFile := filepath.Join(dir, "app.txt")
 	xmlFile := filepath.Join(dir, "toast.xml")

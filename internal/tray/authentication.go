@@ -27,7 +27,7 @@ func (m *TrayManager) PerformBackgroundAuthentication() {
 			errorMessage += " Retrying..."
 		}
 
-		go notifications.NewNotification(i18n.T("puush error"), "", errorMessage).
+		go notifications.NewNotification("puush", i18n.T("puush error"), errorMessage).
 			WithIconData(assets.PuushIconData).
 			Push()
 

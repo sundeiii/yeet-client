@@ -147,7 +147,7 @@ func (m *TrayManager) SetScreenshotProvider(provider screenshots.ScreenshotProvi
 
 // ShowNotification will display a regular notification with a specified title & message
 func (m *TrayManager) ShowNotification(title, message string) {
-	go notifications.NewNotification(title, "", message).
+	go notifications.NewNotification("puush", title, message).
 		WithIconData(assets.PuushIconData).
 		Push()
 }
@@ -167,7 +167,7 @@ func (m *TrayManager) ShowUploadNotification(url string, preview []byte, duplica
 		if duplicate {
 			title = i18n.T("Already uploaded, same link as before")
 		}
-		notification := notifications.NewNotification(title, "", url).
+		notification := notifications.NewNotification("puush", title, url).
 			WithIconData(icon).
 			WithAction(url)
 		// The app plays its own sound (or none); only "system" leaves it to the system
@@ -183,7 +183,7 @@ func (m *TrayManager) ShowUploadNotification(url string, preview []byte, duplica
 
 // ShowErrorNotification will display an error notification with the provided message
 func (m *TrayManager) ShowErrorNotification(message string) {
-	go notifications.NewNotification(i18n.T("puush error"), "", message).
+	go notifications.NewNotification("puush", i18n.T("puush error"), message).
 		WithIconData(assets.PuushErrorIconData).
 		Push()
 }

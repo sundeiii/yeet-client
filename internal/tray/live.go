@@ -191,7 +191,7 @@ func (m *TrayManager) handleLive(event *puush.LiveEvent) {
 
 // notifyMessage shows a chat message; clicking it opens the chat.
 func (m *TrayManager) notifyMessage(message *puush.LiveMessage) {
-	notifications.NewNotification(message.Name, "", message.Text).
+	notifications.NewNotification("puush", message.Name, message.Text).
 		WithIconData(m.avatar(message.Avatar)).
 		WithAction(m.api.FormatURL("/account/messages/" + message.With)).
 		Push()
@@ -200,7 +200,7 @@ func (m *TrayManager) notifyMessage(message *puush.LiveMessage) {
 // notifyComment shows a comment on one of the account's files; clicking it
 // opens the file.
 func (m *TrayManager) notifyComment(comment *puush.LiveComment) {
-	notifications.NewNotification(i18n.T("%s commented on %s", comment.Name, comment.File), "", comment.Text).
+	notifications.NewNotification("puush", i18n.T("%s commented on %s", comment.Name, comment.File), comment.Text).
 		WithIconData(m.avatar(comment.Avatar)).
 		WithAction(comment.Link).
 		Push()
