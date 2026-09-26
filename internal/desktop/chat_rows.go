@@ -98,6 +98,7 @@ type messageRow struct {
 
 	content   fyne.CanvasObject
 	highlight *canvas.Rectangle
+	hoverTime *canvas.Text // the time, on messages under someone's name
 	actions   fyne.CanvasObject
 	menu      *fyne.Menu
 }
@@ -127,13 +128,23 @@ func (v *messagesView) messageRow(message *puush.ChatMessage, header bool) fyne.
 		content = container.NewBorder(nil, nil, avatarBox, nil,
 			container.New(layout.NewCustomPaddedVBoxLayout(-4), nameLine, body))
 		content = container.New(layout.NewCustomPaddedLayout(6, 0, 0, 0), content)
-	} else {
-		gap := canvas.NewRectangle(color.Transparent)
-		gap.SetMinSize(fyne.NewSize(avatarColumn, 0))
-		content = container.NewBorder(nil, nil, gap, nil, body)
 	}
 
-	row := &messageRow{content: content, highlight: canvas.NewRectangle(hoverColor)}
+	row := &messageRow{highlight: canvas.NewRectangle(hoverColor)}
+	if !header {
+		// Where the avatar would be, the time shows while the mouse is over it
+		gap := canvas.NewRectangle(color.Transparent)
+		gap.SetMinSize(fyne.NewSize(avatarColumn, 0))
+		// Always there, but see-through until the mouse is over the message,
+		// so showing it doesn't move anything
+		row.hoverTime = canvas.NewText(messageTime(message, time.Now()), color.Transparent)
+		row.hoverTime.TextSize = 10
+		row.hoverTime.Alignment = fyne.TextAlignTrailing
+		gutter := container.NewStack(gap, container.NewVBox(
+			container.New(layout.NewCustomPaddedLayout(4, 0, 0, 8), row.hoverTime)))
+		content = container.NewBorder(nil, nil, gutter, nil, body)
+	}
+	row.content = content
 	row.highlight.Hide()
 	if row.menu = v.messageMenu(message); row.menu != nil {
 		var more *tapArea
@@ -176,6 +187,10 @@ func (row *messageRow) showMenu(at fyne.Position) {
 
 func (row *messageRow) MouseIn(*desktop.MouseEvent) {
 	row.highlight.Show()
+	if row.hoverTime != nil {
+		row.hoverTime.Color = quietTextColor
+		row.hoverTime.Refresh()
+	}
 	if row.actions != nil {
 		row.actions.Show()
 	}
@@ -185,6 +200,10 @@ func (row *messageRow) MouseMoved(*desktop.MouseEvent) {}
 
 func (row *messageRow) MouseOut() {
 	row.highlight.Hide()
+	if row.hoverTime != nil {
+		row.hoverTime.Color = color.Transparent
+		row.hoverTime.Refresh()
+	}
 	if row.actions != nil {
 		row.actions.Hide()
 	}
@@ -198,7 +217,9 @@ func (*cornerLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	for _, object := range objects {
 		min := object.MinSize()
 		object.Resize(min)
-		object.Move(fyne.NewPos(size.Width-min.Width-12, 2))
+		// On the row's top edge, like Discord, but mostly inside the row so
+		// the mouse can reach it without leaving the message
+		object.Move(fyne.NewPos(size.Width-min.Width-16, -6))
 	}
 }
 
