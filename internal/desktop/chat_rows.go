@@ -56,6 +56,13 @@ func (v *messagesView) addMessage(message *puush.ChatMessage) {
 
 	grouped := prev != nil && prev.Mine == message.Mine && message.Reply == nil &&
 		(sent.IsZero() || prevSent.IsZero() || sent.Sub(prevSent) < groupWindow)
+	if !grouped && prev != nil {
+		// The space between people's messages belongs to neither, so it
+		// never lights up
+		gap := canvas.NewRectangle(color.Transparent)
+		gap.SetMinSize(fyne.NewSize(0, 14))
+		v.thread.Add(gap)
+	}
 	v.thread.Add(v.messageRow(message, !grouped))
 }
 
@@ -118,11 +125,12 @@ func (v *messagesView) messageRow(message *puush.ChatMessage, header bool) fyne.
 		nameText.TextStyle = fyne.TextStyle{Bold: true}
 		when := canvas.NewText(headerTime(message, time.Now()), quietTextColor)
 		when.TextSize = 10
-		nameLine := container.New(layout.NewCustomPaddedLayout(6, 0, 4, 0),
+		nameLine := container.New(layout.NewCustomPaddedLayout(0, 0, 4, 0),
 			container.NewHBox(nameText, container.NewCenter(when)))
 
 		avatar := v.avatarImage(avatarLink)
-		avatarBox := container.New(layout.NewCustomPaddedLayout(6, 0, 10, 10), container.NewVBox(avatar))
+		// No room above the avatar: the lit-up area starts at its top edge
+		avatarBox := container.New(layout.NewCustomPaddedLayout(0, 0, 10, 10), container.NewVBox(avatar))
 		content = container.NewBorder(nil, nil, avatarBox, nil,
 			container.New(layout.NewCustomPaddedVBoxLayout(-4), nameLine, body))
 		if message.Reply != nil && !message.Removed {
@@ -130,7 +138,6 @@ func (v *messagesView) messageRow(message *puush.ChatMessage, header bool) fyne.
 			// joined to the avatar by a curved line
 			content = container.New(layout.NewCustomPaddedVBoxLayout(-6), v.replyLine(message.Reply), content)
 		}
-		content = container.New(layout.NewCustomPaddedLayout(6, 0, 0, 0), content)
 	}
 
 	row := &messageRow{message: message, highlight: canvas.NewRectangle(hoverColor)}
@@ -444,7 +451,8 @@ func (*replyCurve) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 }
 
 func (*replyCurve) MinSize([]fyne.CanvasObject) fyne.Size {
-	return fyne.NewSize(avatarColumn, 20)
+	// As tall as the small avatar, so the lit-up area starts at its top
+	return fyne.NewSize(avatarColumn, 16)
 }
 
 // fileCard is a file sent in a chat: pictures and videos as a preview, other
