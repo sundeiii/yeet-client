@@ -151,6 +151,7 @@ type HotkeyConfig struct {
 	DelayedArea             string
 	EditArea                string
 	Record                  string
+	CopyText                string
 }
 
 type MiscConfig struct {
@@ -230,6 +231,7 @@ func DefaultConfig() *Config {
 			DelayedArea:             "Ctrl+Shift+7",
 			EditArea:                "Ctrl+Shift+8",
 			Record:                  "Ctrl+Shift+9",
+			CopyText:                "Ctrl+Shift+0",
 		},
 		Misc: MiscConfig{
 			LastUpdate: time.Now(),

@@ -1,9 +1,11 @@
 package puush
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -43,15 +45,39 @@ type Chat struct {
 	FromMe bool   `json:"fromMe"`
 	Unread int    `json:"unread"`
 	Time   string `json:"time"`
+	Online bool   `json:"online"`
 }
 
 // ChatMessage is one message in a chat.
 type ChatMessage struct {
-	Id   int       `json:"id"`
-	Mine bool      `json:"mine"`
-	Text string    `json:"text"`
-	Time string    `json:"time"`
-	File *ChatFile `json:"file"` // a file sent with the message, if any
+	Id    int        `json:"id"`
+	Mine  bool       `json:"mine"`
+	Text  string     `json:"text"`
+	Time  string     `json:"time"`
+	File  *ChatFile  `json:"file"`  // a file sent with the message, if any
+	Reply *ChatReply `json:"reply"` // the message this one answers, if any
+	// Changed afterwards, or taken back by the sender
+	Edited  bool `json:"edited"`
+	Removed bool `json:"removed"`
+	// The user's own message was read by the other person
+	Seen bool `json:"seen"`
+}
+
+// ChatReply is the message a reply answers, in short.
+type ChatReply struct {
+	Id      int    `json:"id"`
+	Text    string `json:"text"`
+	Mine    bool   `json:"mine"`
+	Removed bool   `json:"removed"`
+}
+
+// Presence is whether someone is online, and on what, or when they were
+// last. Hidden means they don't show it.
+type Presence struct {
+	Online  bool     `json:"online"`
+	Devices []string `json:"devices"` // phone, app or web
+	Seen    int64    `json:"seen"`    // Unix seconds, 0 if unknown
+	Hidden  bool     `json:"hidden"`
 }
 
 // ChatFile is a file sent in a chat.
@@ -69,6 +95,7 @@ type ChatThread struct {
 	Name     string         `json:"name"`
 	Messages []*ChatMessage `json:"messages"`
 	CantSend string         `json:"cantSend"` // why messages can't be sent, if they can't
+	Presence *Presence      `json:"presence"` // nil on older servers
 }
 
 // Snippet is text saved as a text file.
@@ -116,12 +143,59 @@ func (c *Client) ChatWith(name string, after int) (*ChatThread, error) {
 	return thread, c.appRequest("/api/chats/"+url.PathEscape(name), params, true, thread)
 }
 
-// SendMessage sends a chat message.
-func (c *Client) SendMessage(name, text string) (*ChatMessage, error) {
+// SendMessage sends a chat message, as a reply to another one when reply
+// isn't 0.
+func (c *Client) SendMessage(name, text string, reply int) (*ChatMessage, error) {
 	message := &ChatMessage{}
 	params := url.Values{}
 	params.Set("text", text)
+	if reply > 0 {
+		params.Set("reply", strconv.Itoa(reply))
+	}
 	return message, c.appRequest("/api/chats/"+url.PathEscape(name)+"/send", params, true, message)
+}
+
+// EditMessage changes the text of one of the user's own messages.
+func (c *Client) EditMessage(name string, id int, text string) (*ChatMessage, error) {
+	message := &ChatMessage{}
+	params := url.Values{}
+	params.Set("id", strconv.Itoa(id))
+	params.Set("text", text)
+	return message, c.appRequest("/api/chats/"+url.PathEscape(name)+"/edit", params, true, message)
+}
+
+// RemoveMessage takes back one of the user's own messages.
+func (c *Client) RemoveMessage(name string, id int) error {
+	params := url.Values{}
+	params.Set("id", strconv.Itoa(id))
+	return c.appRequest("/api/chats/"+url.PathEscape(name)+"/remove", params, true, &ChatMessage{})
+}
+
+// ReadText reads the text in a picture, like a part of the screen. The
+// server doesn't keep the picture.
+func (c *Client) ReadText(picture []byte) (string, error) {
+	if !c.Account.Credentials.HasApiKey() {
+		return "", PuushErrorInvalidCredentials
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	writer.WriteField("k", *c.Account.Credentials.Key)
+	part, err := writer.CreateFormFile("f", "screen.png")
+	if err != nil {
+		return "", err
+	}
+	part.Write(picture)
+	writer.Close()
+
+	request, err := http.NewRequest("POST", c.FormatURL("/api/text"), &body)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	var result struct {
+		Text string `json:"text"`
+	}
+	return result.Text, c.appDo(request, &result)
 }
 
 // SendFile sends one of the account's uploads (its link) in a chat, with an
@@ -198,6 +272,11 @@ func (c *Client) appRequest(path string, params url.Values, withKey bool, target
 		return err
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return c.appDo(request, target)
+}
+
+// appDo sends a request to a JSON endpoint and reads the answer into target.
+func (c *Client) appDo(request *http.Request, target any) error {
 	request.Header.Set("User-Agent", "puush")
 	// Messages from the server in the app's language
 	request.Header.Set("Accept-Language", i18n.Current())

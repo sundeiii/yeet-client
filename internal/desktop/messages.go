@@ -16,6 +16,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -32,6 +33,7 @@ var (
 	myBubbleColor    = color.NRGBA{R: 214, G: 232, B: 255, A: 255}
 	theirBubbleColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	quietTextColor   = color.NRGBA{R: 110, G: 110, B: 110, A: 255}
+	onlineColor      = color.NRGBA{R: 46, G: 160, B: 67, A: 255}
 )
 
 // messagesView is the app window's chats: the list on the left, the open
@@ -56,6 +58,7 @@ type messagesView struct {
 	placeholder fyne.CanvasObject
 	chatPane    fyne.CanvasObject
 	title       *widget.Label
+	presence    *canvas.Text
 	profile     *widget.Hyperlink
 	thread      *fyne.Container
 	scroll      *container.Scroll
@@ -67,6 +70,18 @@ type messagesView struct {
 	send        *widget.Button
 	attach      *widget.Button
 	sending     int // files still being sent
+
+	// Answering or changing a message, with the bar above the text box
+	replyTo    *puush.ChatMessage
+	editing    *puush.ChatMessage
+	composeBar fyne.CanvasObject
+	compose    *widget.Label
+	// "Seen" under the last message, when it's the user's and was read
+	seen     fyne.CanvasObject
+	lastMine bool
+	names    map[string]string // display names, for "Replying to Mika"
+	// Where the thread was scrolled to, kept while it's loaded again
+	keepOffset *fyne.Position
 
 	thumbs map[string]fyne.Resource // previews of files in chats
 
@@ -84,6 +99,7 @@ func (ui *UI) buildMessagesTab() *messagesView {
 		avatars:   map[string]fyne.Resource{},
 		requested: map[string]bool{},
 		thumbs:    map[string]fyne.Resource{},
+		names:     map[string]string{},
 	}
 
 	// Left: the chats, and a box to start one
@@ -123,6 +139,8 @@ func (ui *UI) buildMessagesTab() *messagesView {
 	v.title = widget.NewLabel("")
 	v.title.Truncation = fyne.TextTruncateEllipsis
 	v.profile = widget.NewHyperlink(i18n.T("Profile"), nil)
+	v.presence = canvas.NewText("", quietTextColor)
+	v.presence.TextSize = 11
 	v.thread = container.NewVBox()
 	v.scroll = container.NewVScroll(container.NewPadded(v.thread))
 	v.typing = widget.NewLabel("")
@@ -139,8 +157,20 @@ func (ui *UI) buildMessagesTab() *messagesView {
 	v.send = widget.NewButtonWithIcon(i18n.T("Send"), theme.MailSendIcon(), v.sendMessage)
 	v.attach = widget.NewButtonWithIcon("", theme.MailAttachmentIcon(), v.pickFiles)
 
-	header := container.NewBorder(nil, widget.NewSeparator(), nil, v.profile, v.title)
-	footer := container.NewVBox(v.typing, v.problem, container.NewBorder(nil, nil, v.attach, v.send, v.entry))
+	v.compose = widget.NewLabel("")
+	v.compose.Truncation = fyne.TextTruncateEllipsis
+	v.compose.Importance = widget.LowImportance
+	cancelCompose := widget.NewButtonWithIcon("", theme.CancelIcon(), v.stopComposing)
+	cancelCompose.Importance = widget.LowImportance
+	composeLine := canvas.NewRectangle(theme.Color(theme.ColorNamePrimary))
+	composeLine.SetMinSize(fyne.NewSize(3, 0))
+	v.composeBar = container.NewBorder(nil, nil, composeLine, cancelCompose, v.compose)
+	v.composeBar.Hide()
+
+	titles := container.New(layout.NewCustomPaddedVBoxLayout(-10), v.title,
+		container.New(layout.NewCustomPaddedLayout(0, 6, 8, 8), v.presence))
+	header := container.NewBorder(nil, widget.NewSeparator(), nil, v.profile, titles)
+	footer := container.NewVBox(v.typing, v.problem, v.composeBar, container.NewBorder(nil, nil, v.attach, v.send, v.entry))
 	v.chatPane = container.NewBorder(header, footer, nil, nil, v.scroll)
 	v.chatPane.Hide()
 
@@ -190,6 +220,7 @@ type chatRow struct {
 	widget.BaseWidget
 
 	avatar  *canvas.Image
+	online  *fyne.Container
 	name    *widget.Label
 	preview *widget.Label
 	unread  *widget.Label
@@ -204,6 +235,10 @@ func (v *messagesView) createChatRow() fyne.CanvasObject {
 	}
 	row.avatar.FillMode = canvas.ImageFillContain
 	row.avatar.SetMinSize(fyne.NewSquareSize(34))
+	dot := canvas.NewCircle(onlineColor)
+	dot.StrokeColor = color.White
+	dot.StrokeWidth = 2
+	row.online = container.NewGridWrap(fyne.NewSquareSize(11), dot)
 	row.name.Truncation = fyne.TextTruncateEllipsis
 	row.preview.Truncation = fyne.TextTruncateEllipsis
 	row.preview.Importance = widget.LowImportance
@@ -214,7 +249,10 @@ func (v *messagesView) createChatRow() fyne.CanvasObject {
 
 func (row *chatRow) CreateRenderer() fyne.WidgetRenderer {
 	text := container.New(layout.NewCustomPaddedVBoxLayout(-12), row.name, row.preview)
-	return widget.NewSimpleRenderer(container.NewBorder(nil, nil, container.NewCenter(row.avatar), row.unread, text))
+	// The green dot of people online sits on the avatar's corner
+	corner := container.NewVBox(layout.NewSpacer(), container.NewHBox(layout.NewSpacer(), row.online))
+	avatar := container.NewCenter(container.NewStack(row.avatar, corner))
+	return widget.NewSimpleRenderer(container.NewBorder(nil, nil, avatar, row.unread, text))
 }
 
 func (v *messagesView) updateChatRow(id widget.ListItemID, object fyne.CanvasObject) {
@@ -223,7 +261,13 @@ func (v *messagesView) updateChatRow(id widget.ListItemID, object fyne.CanvasObj
 		return
 	}
 	chat := v.chats[id]
+	v.names[strings.ToLower(chat.With)] = chat.Name
 	row.name.SetText(chat.Name)
+	if chat.Online {
+		row.online.Show()
+	} else {
+		row.online.Hide()
+	}
 	preview := strings.Join(strings.Fields(chat.Text), " ")
 	if chat.FromMe {
 		preview = i18n.T("You: %s", preview)
@@ -327,6 +371,10 @@ func (v *messagesView) openChat(name string) {
 	v.with = name
 	v.lastId = 0
 	v.thread.RemoveAll()
+	v.seen = nil
+	v.lastMine = false
+	v.stopComposing()
+	v.showPresence(nil)
 	v.title.SetText(name)
 	v.setProfileLink(name)
 	v.typing.Hide()
@@ -382,6 +430,7 @@ func (v *messagesView) fetchNew() {
 				return
 			}
 			v.showThread(thread, after == 0)
+			v.keepOffset = nil
 			if v.fetchAgain {
 				v.fetchAgain = false
 				v.fetchNew()
@@ -394,7 +443,11 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 	if first && v.lastId == 0 {
 		// The server knows how the name is written (Lilian, not lilian)
 		v.with = thread.With
+		v.names[strings.ToLower(thread.With)] = thread.Name
 		v.title.SetText(thread.Name)
+		v.showPresence(thread.Presence)
+		v.seen = nil
+		v.lastMine = false
 		v.setProfileLink(thread.With)
 		if v.visible {
 			v.ui.tray.SetOpenChat(thread.With)
@@ -414,8 +467,16 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 			v.hint = false
 			v.thread.RemoveAll()
 		}
+		if v.seen != nil {
+			v.thread.Remove(v.seen)
+			v.seen = nil
+		}
 		v.lastId = message.Id
-		v.thread.Add(v.messageBubble(message))
+		v.thread.Add(v.messageRow(message))
+		v.lastMine = message.Mine
+		if message.Mine && message.Seen {
+			v.showSeen()
+		}
 		added = true
 	}
 	if thread.CantSend != "" {
@@ -432,7 +493,12 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 	}
 	if added || first {
 		v.thread.Refresh()
-		v.scroll.ScrollToBottom()
+		if v.keepOffset != nil {
+			v.scroll.Offset = *v.keepOffset
+			v.scroll.Refresh()
+		} else {
+			v.scroll.ScrollToBottom()
+		}
 		if !first {
 			v.typing.Hide()
 		}
@@ -458,11 +524,21 @@ func (v *messagesView) sendMessage() {
 	if text == "" || v.with == "" {
 		return
 	}
+	editing, replyTo := v.editing, v.replyTo
+	v.stopComposing()
 	v.entry.SetText("")
 	v.send.Disable()
 	with, generation := v.with, v.generation
 	go func() {
-		_, err := v.ui.api.SendMessage(with, text)
+		var err error
+		switch {
+		case editing != nil:
+			_, err = v.ui.api.EditMessage(with, editing.Id, text)
+		case replyTo != nil:
+			_, err = v.ui.api.SendMessage(with, text, replyTo.Id)
+		default:
+			_, err = v.ui.api.SendMessage(with, text, 0)
+		}
 		fyne.Do(func() {
 			if generation != v.generation {
 				return
@@ -470,11 +546,20 @@ func (v *messagesView) sendMessage() {
 			v.send.Enable()
 			if err != nil {
 				v.entry.SetText(text)
+				if editing != nil {
+					v.startEditing(editing)
+				} else if replyTo != nil {
+					v.startReply(replyTo)
+				}
 				v.showProblem(err)
 				return
 			}
 			v.problem.Hide()
-			v.fetchNew()
+			if editing != nil {
+				v.reload()
+			} else {
+				v.fetchNew()
+			}
 		})
 	}()
 }
@@ -600,6 +685,54 @@ func (v *messagesView) onLive(event *puush.LiveEvent) {
 			v.reloadChatsSoon()
 		})
 
+	case "changed":
+		var changed struct {
+			With string `json:"with"`
+		}
+		if json.Unmarshal(event.Data, &changed) != nil {
+			return
+		}
+		fyne.Do(func() {
+			if strings.EqualFold(changed.With, v.with) {
+				v.reload()
+			}
+			v.reloadChatsSoon()
+		})
+
+	case "seen":
+		var seen struct {
+			With string `json:"with"`
+		}
+		if json.Unmarshal(event.Data, &seen) != nil {
+			return
+		}
+		fyne.Do(func() {
+			if strings.EqualFold(seen.With, v.with) && v.lastMine && v.seen == nil {
+				v.showSeen()
+				v.thread.Refresh()
+			}
+		})
+
+	case "presence":
+		var presence struct {
+			With string `json:"with"`
+			puush.Presence
+		}
+		if json.Unmarshal(event.Data, &presence) != nil {
+			return
+		}
+		fyne.Do(func() {
+			if strings.EqualFold(presence.With, v.with) {
+				v.showPresence(&presence.Presence)
+			}
+			for _, chat := range v.chats {
+				if strings.EqualFold(chat.With, presence.With) && chat.Online != (presence.Online && !presence.Hidden) {
+					chat.Online = presence.Online && !presence.Hidden
+					v.list.Refresh()
+				}
+			}
+		})
+
 	case "typing":
 		var typing struct {
 			With string `json:"with"`
@@ -625,15 +758,28 @@ func (v *messagesView) onLive(event *puush.LiveEvent) {
 // left for the other person's.
 func (v *messagesView) messageBubble(message *puush.ChatMessage) fyne.CanvasObject {
 	parts := []fyne.CanvasObject{}
-	if message.File != nil {
-		parts = append(parts, v.fileCard(message.File))
+	switch {
+	case message.Removed:
+		gone := widget.NewLabel(i18n.T("Message deleted"))
+		gone.TextStyle = fyne.TextStyle{Italic: true}
+		gone.Importance = widget.LowImportance
+		parts = append(parts, gone)
+	default:
+		if message.Reply != nil {
+			parts = append(parts, v.replyQuote(message.Reply))
+		}
+		if message.File != nil {
+			parts = append(parts, v.fileCard(message.File))
+		}
+		if message.Text != "" || message.File == nil {
+			parts = append(parts, widget.NewLabel(wrapText(message.Text, bubbleTextWidth)))
+		}
 	}
-	if message.Text != "" || message.File == nil {
-		text := widget.NewLabel(wrapText(message.Text, bubbleTextWidth))
-		text.Selectable = true
-		parts = append(parts, text)
+	stampText := message.Time
+	if message.Edited && !message.Removed {
+		stampText = i18n.T("%s · edited", message.Time)
 	}
-	stamp := canvas.NewText(message.Time, quietTextColor)
+	stamp := canvas.NewText(stampText, quietTextColor)
 	stamp.TextSize = 10
 
 	background := canvas.NewRectangle(theirBubbleColor)
@@ -696,7 +842,12 @@ func (v *messagesView) fileCard(file *puush.ChatFile) fyne.CanvasObject {
 	if file.Kind == "image" || file.Kind == "video" {
 		return container.NewVBox(container.NewPadded(preview), details)
 	}
-	return container.NewBorder(nil, nil, container.NewPadded(preview), nil, details)
+	// A bubble is only as wide as what's in it, and a name that's cut short
+	// asks for no room at all, so the card keeps a width of its own
+	width := min(fyne.MeasureText(file.Name, theme.TextSize(), fyne.TextStyle{}).Width+90, bubbleTextWidth)
+	sizer := canvas.NewRectangle(color.Transparent)
+	sizer.SetMinSize(fyne.NewSize(max(width, 180), 0))
+	return container.NewStack(sizer, container.NewBorder(nil, nil, container.NewPadded(preview), nil, details))
 }
 
 func quietLabel(text string) fyne.CanvasObject {
@@ -763,4 +914,276 @@ func (v *messagesView) loggedOut() {
 	v.placeholder.Show()
 	v.list.UnselectAll()
 	v.loadChats()
+}
+
+// reload loads the open chat again, e.g. after a message was changed,
+// staying where it was scrolled to.
+func (v *messagesView) reload() {
+	if v.with == "" {
+		return
+	}
+	offset := v.scroll.Offset
+	v.keepOffset = &offset
+	v.lastId = 0
+	v.fetchNew()
+}
+
+func (v *messagesView) showSeen() {
+	label := canvas.NewText(i18n.T("Seen"), quietTextColor)
+	label.TextSize = 10
+	label.Alignment = fyne.TextAlignTrailing
+	v.seen = container.New(layout.NewCustomPaddedLayout(-6, 0, 0, 10), label)
+	v.thread.Add(v.seen)
+}
+
+// showPresence shows whether the other person is online, and on what.
+func (v *messagesView) showPresence(presence *puush.Presence) {
+	v.presence.Text = presenceText(presence, time.Now())
+	if presence != nil && presence.Online && !presence.Hidden {
+		v.presence.Color = onlineColor
+	} else {
+		v.presence.Color = quietTextColor
+	}
+	v.presence.Refresh()
+}
+
+func presenceText(presence *puush.Presence, now time.Time) string {
+	if presence == nil || presence.Hidden {
+		return ""
+	}
+	if presence.Online {
+		var devices []string
+		for _, device := range presence.Devices {
+			switch device {
+			case "phone":
+				devices = append(devices, i18n.T("phone"))
+			case "app":
+				devices = append(devices, i18n.T("the app"))
+			case "web":
+				devices = append(devices, i18n.T("the website"))
+			}
+		}
+		if len(devices) == 0 {
+			return i18n.T("Online")
+		}
+		return i18n.T("Online on %s", strings.Join(devices, ", "))
+	}
+	if presence.Seen <= 0 {
+		return ""
+	}
+	seen := time.Unix(presence.Seen, 0).Local()
+	switch {
+	case now.Sub(seen) < time.Minute:
+		return i18n.T("Last online just now")
+	case sameDay(seen, now):
+		return i18n.T("Last online today at %s", seen.Format("15:04"))
+	case sameDay(seen, now.AddDate(0, 0, -1)):
+		return i18n.T("Last online yesterday at %s", seen.Format("15:04"))
+	}
+	return i18n.T("Last online %s", i18n.Date(seen))
+}
+
+func sameDay(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	return ay == by && am == bm && ad == bd
+}
+
+// ---- Answering and changing messages ----
+
+// messageRow is a message with its menu: right-click it, or the "..."
+// button that shows while the mouse is over it.
+type messageRow struct {
+	widget.BaseWidget
+
+	content fyne.CanvasObject
+	more    *widget.Button
+	menu    *fyne.Menu
+}
+
+var _ desktop.Hoverable = (*messageRow)(nil)
+
+func (v *messagesView) messageRow(message *puush.ChatMessage) fyne.CanvasObject {
+	bubble := v.messageBubble(message)
+	menu := v.messageMenu(message)
+	if menu == nil {
+		if message.Mine {
+			return container.NewHBox(layout.NewSpacer(), bubble)
+		}
+		return container.NewHBox(bubble, layout.NewSpacer())
+	}
+	row := &messageRow{menu: menu}
+	row.more = widget.NewButtonWithIcon("", theme.MoreHorizontalIcon(), func() {
+		row.showMenu(fyne.CurrentApp().Driver().AbsolutePositionForObject(row.more).AddXY(0, row.more.Size().Height))
+	})
+	row.more.Importance = widget.LowImportance
+	row.more.Hide()
+	if message.Mine {
+		row.content = container.NewHBox(layout.NewSpacer(), container.NewCenter(row.more), bubble)
+	} else {
+		row.content = container.NewHBox(bubble, container.NewCenter(row.more), layout.NewSpacer())
+	}
+	row.ExtendBaseWidget(row)
+	return row
+}
+
+func (row *messageRow) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(row.content)
+}
+
+func (row *messageRow) TappedSecondary(event *fyne.PointEvent) {
+	row.showMenu(event.AbsolutePosition)
+}
+
+func (row *messageRow) showMenu(at fyne.Position) {
+	if canvas := fyne.CurrentApp().Driver().CanvasForObject(row); canvas != nil {
+		widget.ShowPopUpMenuAtPosition(row.menu, canvas, at)
+	}
+}
+
+func (row *messageRow) MouseIn(*desktop.MouseEvent)    { row.more.Show() }
+func (row *messageRow) MouseMoved(*desktop.MouseEvent) {}
+func (row *messageRow) MouseOut()                      { row.more.Hide() }
+
+// messageMenu is what can be done with a message; nil for deleted ones.
+func (v *messagesView) messageMenu(message *puush.ChatMessage) *fyne.Menu {
+	if message.Removed {
+		return nil
+	}
+	clipboard := fyne.CurrentApp().Clipboard()
+	items := []*fyne.MenuItem{
+		fyne.NewMenuItem(i18n.T("Reply"), func() { v.startReply(message) }),
+	}
+	if message.Text != "" {
+		items = append(items, fyne.NewMenuItem(i18n.T("Copy text"), func() { clipboard.SetContent(message.Text) }))
+	}
+	if message.File != nil {
+		items = append(items, fyne.NewMenuItem(i18n.T("Copy link"), func() { clipboard.SetContent(message.File.Url) }))
+	}
+	if message.Mine {
+		items = append(items,
+			fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem(i18n.T("Edit"), func() { v.startEditing(message) }),
+			fyne.NewMenuItem(i18n.T("Delete"), func() { v.confirmRemove(message) }),
+		)
+	}
+	return fyne.NewMenu("", items...)
+}
+
+func (v *messagesView) startReply(message *puush.ChatMessage) {
+	v.editing = nil
+	v.replyTo = message
+	name := i18n.T("yourself")
+	if !message.Mine {
+		name = v.displayName()
+	}
+	v.compose.SetText(i18n.T("Replying to %s: %s", name, oneLine(messageSummary(message))))
+	v.composeBar.Show()
+	v.focusEntry()
+}
+
+func (v *messagesView) startEditing(message *puush.ChatMessage) {
+	v.replyTo = nil
+	v.editing = message
+	v.compose.SetText(i18n.T("Editing your message"))
+	v.composeBar.Show()
+	v.entry.SetText(message.Text)
+	v.focusEntry()
+}
+
+func (v *messagesView) stopComposing() {
+	if v.editing != nil {
+		v.entry.SetText("")
+	}
+	v.replyTo = nil
+	v.editing = nil
+	v.composeBar.Hide()
+}
+
+func (v *messagesView) focusEntry() {
+	if canvas := fyne.CurrentApp().Driver().CanvasForObject(v.entry); canvas != nil {
+		canvas.Focus(v.entry)
+	}
+}
+
+func (v *messagesView) confirmRemove(message *puush.ChatMessage) {
+	with, generation := v.with, v.generation
+	// The native dialog waits for an answer, so not on the main thread
+	go func() {
+		confirmed := dialog.Message("%s", i18n.T("Delete this message? It's deleted for both of you.")).
+			Title(i18n.T("Delete message")).
+			YesNo()
+		if !confirmed {
+			return
+		}
+		err := v.ui.api.RemoveMessage(with, message.Id)
+		fyne.Do(func() {
+			if generation != v.generation {
+				return
+			}
+			if err != nil {
+				v.showProblem(err)
+				return
+			}
+			v.reload()
+		})
+	}()
+}
+
+func (v *messagesView) displayName() string {
+	if name := v.names[strings.ToLower(v.with)]; name != "" {
+		return name
+	}
+	return v.with
+}
+
+// replyQuote shows the message a reply answers, in short.
+func (v *messagesView) replyQuote(reply *puush.ChatReply) fyne.CanvasObject {
+	name := v.displayName()
+	if reply.Mine {
+		name = i18n.T("You")
+	}
+	text := reply.Text
+	if reply.Removed {
+		text = i18n.T("Message deleted")
+	}
+	who := canvas.NewText(name, theme.Color(theme.ColorNamePrimary))
+	who.TextSize = 11
+	what := canvas.NewText(fitText(oneLine(text), bubbleTextWidth-24, 11), quietTextColor)
+	what.TextSize = 11
+	line := canvas.NewRectangle(theme.Color(theme.ColorNamePrimary))
+	line.SetMinSize(fyne.NewSize(3, 0))
+	lines := container.New(layout.NewCustomPaddedVBoxLayout(0), who, what)
+	return container.New(layout.NewCustomPaddedLayout(6, 0, 8, 8),
+		container.NewBorder(nil, nil, line, nil, container.New(layout.NewCustomPaddedLayout(0, 0, 6, 0), lines)))
+}
+
+// messageSummary is a message in a few words, for the reply bar.
+func messageSummary(message *puush.ChatMessage) string {
+	if message.Text != "" {
+		return message.Text
+	}
+	if message.File != nil {
+		return message.File.Name
+	}
+	return ""
+}
+
+func oneLine(text string) string {
+	return strings.Join(strings.Fields(text), " ")
+}
+
+// fitText shortens text with "…" until it fits in width.
+func fitText(text string, width float32, size float32) string {
+	fits := func(line string) bool {
+		return fyne.MeasureText(line, size, fyne.TextStyle{}).Width <= width
+	}
+	if fits(text) {
+		return text
+	}
+	runes := []rune(text)
+	for len(runes) > 0 && !fits(string(runes)+"…") {
+		runes = runes[:len(runes)-1]
+	}
+	return string(runes) + "…"
 }

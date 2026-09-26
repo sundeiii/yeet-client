@@ -326,6 +326,10 @@ func (m *TrayManager) rebuildMenuItems() {
 		go m.EditAreaScreenshot()
 	})
 	editArea.Icon = selectionIcon
+	copyText := fyne.NewMenuItem(i18n.T("Copy Text from Screen"), func() {
+		go m.CopyScreenText()
+	})
+	copyText.Icon = selectionIcon
 	captureLastArea := fyne.NewMenuItem(i18n.T("Capture Last Area Again"), func() {
 		go m.UploadLastAreaScreenshot()
 	})
@@ -389,6 +393,9 @@ func (m *TrayManager) rebuildMenuItems() {
 		captureLastArea,
 		delayed,
 	)
+	if m.api.Account.Credentials.HasApiKey() {
+		items = append(items, copyText)
+	}
 	if record != nil {
 		items = append(items, record)
 	}

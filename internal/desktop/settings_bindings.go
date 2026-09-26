@@ -59,6 +59,9 @@ func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
 	editAreaButton := createHotkeyButton(ui.config.Hotkeys.EditArea, func(s string) {
 		ui.config.Hotkeys.EditArea = s
 	})
+	copyTextButton := createHotkeyButton(ui.config.Hotkeys.CopyText, func(s string) {
+		ui.config.Hotkeys.CopyText = s
+	})
 	recordButton := createHotkeyButton(ui.config.Hotkeys.Record, func(s string) {
 		ui.config.Hotkeys.Record = s
 	})
@@ -80,6 +83,7 @@ func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
 		rowEditArea,
 		rowRepeatArea,
 		rowDelayedArea,
+		container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Copy text from an area:")), copyTextButton),
 	)
 	if ui.tray.RecordingSupported() {
 		content.Add(container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Record screen (again to stop):")), recordButton))

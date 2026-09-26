@@ -164,3 +164,79 @@ func TestUploadResponseDuplicate(t *testing.T) {
 		}
 	}
 }
+
+func TestRepliesEditsAndRemoving(t *testing.T) {
+	var got []string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		got = append(got, r.URL.Path+" id="+r.FormValue("id")+" reply="+r.FormValue("reply")+" text="+r.FormValue("text"))
+		writeJson(w, 200, map[string]any{"id": 9, "mine": true, "text": r.FormValue("text"), "edited": r.URL.Path == "/api/chats/mika/edit"})
+	})
+
+	if _, err := client.SendMessage("mika", "plain", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SendMessage("mika", "answer", 4); err != nil {
+		t.Fatal(err)
+	}
+	edited, err := client.EditMessage("mika", 9, "fixed")
+	if err != nil || !edited.Edited {
+		t.Fatalf("edit = %+v, %v", edited, err)
+	}
+	if err := client.RemoveMessage("mika", 9); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"/api/chats/mika/send id= reply= text=plain",
+		"/api/chats/mika/send id= reply=4 text=answer",
+		"/api/chats/mika/edit id=9 reply= text=fixed",
+		"/api/chats/mika/remove id=9 reply= text=",
+	}
+	for i := range want {
+		if i >= len(got) || got[i] != want[i] {
+			t.Fatalf("requests = %q", got)
+		}
+	}
+}
+
+func TestThreadWithRepliesAndPresence(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"with":"mika","presence":{"online":true,"devices":["phone"]},"messages":[
+			{"id":1,"text":"hi"},
+			{"id":2,"mine":true,"text":"yo","seen":true,"edited":true,"reply":{"id":1,"text":"hi"}},
+			{"id":3,"removed":true}]}`))
+	})
+	thread, err := client.ChatWith("mika", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply := thread.Messages[1]
+	if !thread.Presence.Online || thread.Presence.Devices[0] != "phone" || reply.Reply.Id != 1 || !reply.Seen || !reply.Edited || !thread.Messages[2].Removed {
+		t.Errorf("thread = %+v %+v", thread.Presence, reply)
+	}
+}
+
+func TestReadText(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		file, _, err := r.FormFile("f")
+		if err != nil || r.FormValue("k") != "secret" || r.URL.Path != "/api/text" {
+			writeJson(w, 400, map[string]string{"error": "That isn't a picture."})
+			return
+		}
+		data := make([]byte, 4)
+		file.Read(data)
+		if string(data) == "fail" {
+			writeJson(w, 501, map[string]string{"error": "This server can't read text in pictures."})
+			return
+		}
+		writeJson(w, 200, map[string]string{"text": "Hello\nworld"})
+	})
+	text, err := client.ReadText([]byte("\x89PNG"))
+	if err != nil || text != "Hello\nworld" {
+		t.Errorf("ReadText = %q, %v", text, err)
+	}
+	if _, err := client.ReadText([]byte("fail")); FormatError(err) != "This server can't read text in pictures." {
+		t.Errorf("expected the server's message, got %v", err)
+	}
+}
