@@ -132,11 +132,11 @@ func (v *messagesView) messageRow(message *puush.ChatMessage, header bool) fyne.
 		// No room above the avatar: the lit-up area starts at its top edge
 		avatarBox := container.New(layout.NewCustomPaddedLayout(0, 0, 10, 10), container.NewVBox(avatar))
 		content = container.NewBorder(nil, nil, avatarBox, nil,
-			container.New(layout.NewCustomPaddedVBoxLayout(-4), nameLine, body))
+			container.New(layout.NewCustomPaddedVBoxLayout(1), nameLine, body))
 		if message.Reply != nil && !message.Removed {
 			// Like Discord: the message it answers on a line above the name,
 			// joined to the avatar by a curved line
-			content = container.New(layout.NewCustomPaddedVBoxLayout(-6), v.replyLine(message.Reply), content)
+			content = container.New(layout.NewCustomPaddedVBoxLayout(2), v.replyLine(message.Reply), content)
 		}
 	}
 
