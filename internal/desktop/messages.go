@@ -160,7 +160,8 @@ func (ui *UI) buildMessagesTab() *messagesView {
 	v.presence.TextSize = 11
 	v.thread = container.New(layout.NewCustomPaddedVBoxLayout(0))
 	v.hoverArea = newThreadArea(v)
-	v.scroll = container.NewVScroll(container.NewPadded(v.hoverArea))
+	// Room under the newest message, so it doesn't sit on the text box
+	v.scroll = container.NewVScroll(container.New(layout.NewCustomPaddedLayout(4, 16, 4, 4), v.hoverArea))
 	v.scroll.OnScrolled = func(fyne.Position) { v.hoverArea.recheck() }
 	v.typing = widget.NewLabel("")
 	v.typing.Importance = widget.LowImportance
