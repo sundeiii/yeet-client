@@ -209,17 +209,21 @@ func (row *messageRow) MouseOut() {
 	}
 }
 
-// cornerLayout puts the bar in the top right corner, over the message,
-// without making the row any bigger.
+// cornerLayout puts the bar in the top right corner of the message, over
+// it, without making the row any bigger.
 type cornerLayout struct{}
 
 func (*cornerLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	for _, object := range objects {
 		min := object.MinSize()
 		object.Resize(min)
-		// On the row's top edge, like Discord, but mostly inside the row so
-		// the mouse can reach it without leaving the message
-		object.Move(fyne.NewPos(size.Width-min.Width-16, -6))
+		// Inside the lit-up message, so it's clearly part of it; centred on
+		// messages that are only one short line
+		y := float32(3)
+		if size.Height < min.Height+6 {
+			y = (size.Height - min.Height) / 2
+		}
+		object.Move(fyne.NewPos(size.Width-min.Width-12, y))
 	}
 }
 
@@ -254,8 +258,9 @@ func (area *tapArea) Cursor() desktop.Cursor { return desktop.PointerCursor }
 
 func toolIcon(resource fyne.Resource) fyne.CanvasObject {
 	icon := canvas.NewImageFromResource(theme.NewThemedResource(resource))
-	icon.SetMinSize(fyne.NewSquareSize(16))
-	return container.New(layout.NewCustomPaddedLayout(4, 4, 6, 6), icon)
+	icon.SetMinSize(fyne.NewSquareSize(14))
+	// Small enough to fit inside a message that's one short line
+	return container.New(layout.NewCustomPaddedLayout(2, 2, 6, 6), icon)
 }
 
 // linkText is a file name that opens the file.
