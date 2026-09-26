@@ -1,6 +1,8 @@
 package desktop
 
 import (
+	"time"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
@@ -9,6 +11,7 @@ import (
 	"github.com/sundeiii/yeet-client/internal/config"
 	"github.com/sundeiii/yeet-client/internal/i18n"
 	"github.com/sundeiii/yeet-client/internal/notifications"
+	"github.com/sundeiii/yeet-client/internal/tray"
 )
 
 func (ui *UI) buildGeneralTab() fyne.CanvasObject {
@@ -101,13 +104,56 @@ func (ui *UI) buildGeneralTab() fyne.CanvasObject {
 	albumCheckbox := widget.NewCheck(i18n.T("Share several files as one album link"), func(b bool) { ui.config.General.Albums = b })
 	albumCheckbox.Checked = ui.config.General.Albums
 
+	// How screenshots are named, with a preview of the result
+	namePreview := widget.NewLabel("")
+	namePreview.Importance = widget.LowImportance
+	showNamePreview := func() {
+		example := tray.ScreenshotName(ui.config.Capture.NamePattern, "Discord", time.Now())
+		namePreview.SetText(i18n.T("For example: %s", example+".png"))
+	}
+	nameEntry := widget.NewEntry()
+	nameEntry.SetPlaceHolder(tray.DefaultNamePattern)
+	nameEntry.SetText(ui.config.Capture.NamePattern)
+	nameEntry.OnChanged = func(pattern string) {
+		ui.config.Capture.NamePattern = pattern
+		showNamePreview()
+	}
+	showNamePreview()
+	nameHint := widget.NewLabel(i18n.T("{date}, {time} and {window} (the window's title) are filled in."))
+	nameHint.Wrapping = fyne.TextWrapWord
+	nameRow := container.NewVBox(
+		container.NewBorder(nil, nil, widget.NewLabel(i18n.T("Screenshot names:")), nil, nameEntry),
+		namePreview,
+		nameHint,
+	)
+
+	// What screen recordings are saved as
+	formatLabels := []string{i18n.T("MP4 video (small, sharp)"), i18n.T("GIF (plays everywhere, bigger)")}
+	formatValues := []string{"mp4", "gif"}
+	formatSelect := widget.NewSelect(formatLabels, func(label string) {
+		for i, option := range formatLabels {
+			if option == label {
+				ui.config.Capture.RecordingFormat = formatValues[i]
+			}
+		}
+	})
+	if ui.config.Capture.RecordingFormat == "gif" {
+		formatSelect.SetSelected(formatLabels[1])
+	} else {
+		formatSelect.SetSelected(formatLabels[0])
+	}
+	capturing := container.NewVBox(delayRow, editCheckbox, albumCheckbox, nameRow)
+	if ui.tray.RecordingSupported() {
+		capturing.Add(container.NewBorder(nil, nil, widget.NewLabel(i18n.T("Screen recordings:")), nil, formatSelect))
+	}
+
 	return container.NewVScroll(container.NewVBox(
 		widget.NewSeparator(),
 		createGroup(i18n.T("General Settings"), container.NewVBox(startupCheckbox, ui.languagePicker())),
 		widget.NewSeparator(),
 		createGroup(i18n.T("On successful puush"), onSuccessGrid),
 		widget.NewSeparator(),
-		createGroup(i18n.T("Capturing"), container.NewVBox(delayRow, editCheckbox, albumCheckbox)),
+		createGroup(i18n.T("Capturing"), capturing),
 		widget.NewSeparator(),
 	))
 }

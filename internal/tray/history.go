@@ -82,7 +82,7 @@ func (m *TrayManager) BuildHistoryMenu() []*fyne.MenuItem {
 }
 
 func (m *TrayManager) BuildHistoryMenuItem(historyItem *puush.HistoryItem) *fyne.MenuItem {
-	timeItem := fyne.NewMenuItem(fmt.Sprintf("Uploaded: %s", historyItem.Time.Format("2006-01-02 15:04:05")), func() {})
+	timeItem := fyne.NewMenuItem(fmt.Sprintf("Uploaded: %s", historyItem.Time.Format("2006-01-02 15:04")), func() {})
 	timeItem.Disabled = true
 
 	viewsItem := fyne.NewMenuItem(i18n.T("Views: %d", historyItem.Views), func() {})

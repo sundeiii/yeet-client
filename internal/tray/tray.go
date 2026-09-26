@@ -55,6 +55,7 @@ type TrayManager struct {
 
 	pendingDir   string
 	countingDown atomic.Bool
+	recording    recordingState
 
 	live liveState
 }
@@ -339,6 +340,16 @@ func (m *TrayManager) rebuildMenuItems() {
 		fyne.NewMenuItem(i18n.T("Current Window"), func() { go m.DelayedWindowScreenshot() }),
 	)
 
+	var record *fyne.MenuItem
+	if m.Recording() {
+		record = fyne.NewMenuItem(i18n.T("Stop Recording"), func() { go m.ToggleRecording() })
+	} else if m.RecordingSupported() {
+		record = fyne.NewMenuItem(i18n.T("Record Screen"), func() { go m.ToggleRecording() })
+	}
+	if record != nil {
+		record.Icon = selectionIcon
+	}
+
 	uploadFile := fyne.NewMenuItem(i18n.T("Upload File"), m.UploadFileFromDialog)
 	uploadFile.Icon = uploadIcon
 	uploadClipboard := fyne.NewMenuItem(i18n.T("Upload Clipboard"), func() {
@@ -365,6 +376,11 @@ func (m *TrayManager) rebuildMenuItems() {
 		}
 	})
 
+	if record != nil && m.Recording() {
+		// Easy to find while it's running
+		items = append(items, record, fyne.NewMenuItemSeparator())
+		record = nil
+	}
 	items = append(items,
 		captureWindow,
 		captureDesktop,
@@ -372,6 +388,11 @@ func (m *TrayManager) rebuildMenuItems() {
 		editArea,
 		captureLastArea,
 		delayed,
+	)
+	if record != nil {
+		items = append(items, record)
+	}
+	items = append(items,
 		uploadClipboard,
 		uploadText,
 		uploadFile,

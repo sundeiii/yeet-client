@@ -90,6 +90,9 @@ func (ui *UI) homeContent(w fyne.Window, goToAccount func()) []fyne.CanvasObject
 		captureWindow, captureLast, uploadClipboard,
 		uploadFile,
 	)
+	if ui.tray.RecordingSupported() {
+		actions.Add(actionButton(i18n.T("Record Screen"), selectionActionIcon, hideThen(ui.tray.ToggleRecording)))
+	}
 	objects = append(objects, createGroup(i18n.T("Quick actions"), actions))
 
 	// Where uploads go

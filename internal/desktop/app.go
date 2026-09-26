@@ -33,11 +33,12 @@ type UI struct {
 	startupWindow  fyne.Window
 
 	// Parts of the app window, while it's open
-	windowTabs  *container.AppTabs
-	refreshHome func()
-	uploads     *uploadsView
-	queue       *queueView
-	messages    *messagesView
+	windowTabs   *container.AppTabs
+	settingsTabs *container.AppTabs
+	refreshHome  func()
+	uploads      *uploadsView
+	queue        *queueView
+	messages     *messagesView
 
 	// The account's profile and avatar, once the server told them
 	profile *puush.Profile
@@ -211,6 +212,11 @@ func (ui *UI) Logout() {
 	ui.avatar = nil
 	if ui.messages != nil {
 		ui.messages.loggedOut()
+	}
+	// Logged out, only the login screen is left
+	if ui.settingsWindow != nil {
+		ui.settingsWindow.Close()
+		ui.ShowStartupWindow()
 	}
 }
 

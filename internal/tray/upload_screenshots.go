@@ -2,7 +2,6 @@ package tray
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/sundeiii/yeet-client/internal/i18n"
 	"image"
 	"io"
@@ -68,6 +67,8 @@ func (m *TrayManager) delayedCapture(kind captureKind) {
 }
 
 func (m *TrayManager) captureAndUpload(kind captureKind) {
+	// Named after the window in front before the selector covers it
+	window := screenshots.ActiveWindowTitle()
 	provider := m.GetScreenshotProvider()
 	if provider == nil {
 		m.ShowErrorNotification(i18n.T("No screenshot provider available. Please install a compatible screenshot tool to use this feature!"))
@@ -125,7 +126,7 @@ func (m *TrayManager) captureAndUpload(kind captureKind) {
 		data = edited
 	}
 
-	filename := getImageFilename(data)
+	filename := ScreenshotName(m.config.Capture.NamePattern, window, time.Now()) + getImageExtension(data)
 	localCopy := m.OnScreenshotCaptured(data, filename)
 	m.enqueueJob(&uploadJob{
 		Name:              filename,
@@ -198,10 +199,6 @@ func (m *TrayManager) SaveScreenshotToDisk(data []byte, filename string, path st
 
 	log.Printf("Screenshot saved to: %s", outputPath)
 	return outputPath
-}
-
-func getImageFilename(data []byte) string {
-	return fmt.Sprintf("ss (%s)%s", time.Now().Format("2006-01-02 at 15.04.05"), getImageExtension(data))
 }
 
 func getImageExtension(data []byte) string {

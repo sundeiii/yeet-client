@@ -30,6 +30,8 @@ type Profile struct {
 	Unread  int    `json:"unread"`
 	Profile string `json:"profile"` // link to the profile page, if there's a username
 	Avatar  string `json:"avatar"`  // link to the avatar picture (PNG)
+	// ChatPool is the pool files sent in chats go into (0 on older servers)
+	ChatPool int `json:"chatPool"`
 }
 
 // Chat is a conversation in the list of chats.
@@ -45,10 +47,20 @@ type Chat struct {
 
 // ChatMessage is one message in a chat.
 type ChatMessage struct {
-	Id   int    `json:"id"`
-	Mine bool   `json:"mine"`
-	Text string `json:"text"`
-	Time string `json:"time"`
+	Id   int       `json:"id"`
+	Mine bool      `json:"mine"`
+	Text string    `json:"text"`
+	Time string    `json:"time"`
+	File *ChatFile `json:"file"` // a file sent with the message, if any
+}
+
+// ChatFile is a file sent in a chat.
+type ChatFile struct {
+	Name  string `json:"name"`
+	Url   string `json:"url"`
+	Thumb string `json:"thumb"`
+	Kind  string `json:"kind"` // image, video, audio, text or file
+	Size  string `json:"size"` // like "1.2MB"
 }
 
 // ChatThread is the messages of a chat.
@@ -108,6 +120,16 @@ func (c *Client) ChatWith(name string, after int) (*ChatThread, error) {
 func (c *Client) SendMessage(name, text string) (*ChatMessage, error) {
 	message := &ChatMessage{}
 	params := url.Values{}
+	params.Set("text", text)
+	return message, c.appRequest("/api/chats/"+url.PathEscape(name)+"/send", params, true, message)
+}
+
+// SendFile sends one of the account's uploads (its link) in a chat, with an
+// optional text. The other person can open it even if it's restricted.
+func (c *Client) SendFile(name, link, text string) (*ChatMessage, error) {
+	message := &ChatMessage{}
+	params := url.Values{}
+	params.Set("i", link)
 	params.Set("text", text)
 	return message, c.appRequest("/api/chats/"+url.PathEscape(name)+"/send", params, true, message)
 }

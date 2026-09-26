@@ -59,6 +59,9 @@ func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
 	editAreaButton := createHotkeyButton(ui.config.Hotkeys.EditArea, func(s string) {
 		ui.config.Hotkeys.EditArea = s
 	})
+	recordButton := createHotkeyButton(ui.config.Hotkeys.Record, func(s string) {
+		ui.config.Hotkeys.Record = s
+	})
 
 	rowFullscreen := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Capture full screen:")), fullScreenButton)
 	rowWindow := container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Capture current window:")), currentWindowButton)
@@ -77,10 +80,13 @@ func (ui *UI) buildKeyBindingsTab() fyne.CanvasObject {
 		rowEditArea,
 		rowRepeatArea,
 		rowDelayedArea,
-		rowFile,
-		rowClipboard,
-		rowToggle,
 	)
+	if ui.tray.RecordingSupported() {
+		content.Add(container.NewGridWithColumns(2, widget.NewLabel(i18n.T("Record screen (again to stop):")), recordButton))
+	}
+	for _, row := range []fyne.CanvasObject{rowFile, rowClipboard, rowToggle} {
+		content.Add(row)
+	}
 
 	hint := widget.NewLabel(i18n.T("Click a shortcut, then press the new keys. Escape keeps the old one."))
 	hint.Wrapping = fyne.TextWrapWord

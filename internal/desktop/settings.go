@@ -3,20 +3,29 @@ package desktop
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/sundeiii/yeet-client/internal/i18n"
 )
 
-// Tabs of the app window, in order
+// Tabs of the app window, in order. Settings holds its own tabs.
 const (
 	tabHome = iota
 	tabUploads
 	tabQueue
 	tabMessages
-	tabGeneral
-	tabKeyBindings
-	tabAccount
+	tabSettings
+)
+
+// Tabs inside Settings, in order
+const (
+	settingsGeneral = iota
+	settingsKeyBindings
+	settingsAccount
+	settingsUpdate
+	settingsAdvanced
+	settingsAbout
 )
 
 // ShowAppWindow opens the app window on its home page.
@@ -36,12 +45,27 @@ func (ui *UI) ShowMessagesWindow() {
 
 // ShowSettingsWindow opens the app window on the settings.
 func (ui *UI) ShowSettingsWindow() {
-	ui.showWindow(tabGeneral)
+	ui.showWindow(tabSettings)
 }
 
 func (ui *UI) showWindow(tab int) {
+	// Logged out, there's only logging in, like the very first start
+	if !ui.config.Account.HasCredentials() {
+		if ui.settingsWindow != nil {
+			ui.settingsWindow.Close()
+		}
+		ui.ShowStartupWindow()
+		return
+	}
+	if ui.startupWindow != nil {
+		ui.startupWindow.Close()
+	}
+
 	if ui.settingsWindow != nil {
 		ui.windowTabs.SelectIndex(tab)
+		if tab == tabSettings {
+			ui.settingsTabs.SelectIndex(settingsGeneral)
+		}
 		ui.settingsWindow.Show()
 		ui.settingsWindow.RequestFocus()
 		return
@@ -51,6 +75,7 @@ func (ui *UI) showWindow(tab int) {
 	w.SetOnClosed(func() {
 		ui.settingsWindow = nil
 		ui.windowTabs = nil
+		ui.settingsTabs = nil
 		ui.refreshHome = nil
 		ui.uploads = nil
 		ui.queue = nil
@@ -60,12 +85,32 @@ func (ui *UI) showWindow(tab int) {
 		}
 		ui.SetUpdateFinishedCallback(nil)
 	})
-	w.Resize(fyne.NewSize(740, 500))
+	// Files dropped on the window go into the open chat, or are uploaded
+	w.SetOnDropped(func(_ fyne.Position, uris []fyne.URI) {
+		if ui.messages != nil && ui.messages.dropped(uris) {
+			return
+		}
+		var paths []string
+		for _, uri := range uris {
+			if uri.Scheme() == "file" {
+				paths = append(paths, uri.Path())
+			}
+		}
+		if len(paths) > 0 {
+			if err := ui.tray.EnqueueFiles(paths); err != nil {
+				ui.tray.OnUploadError(err)
+			}
+		}
+	})
+	w.Resize(fyne.NewSize(720, 520))
 	w.SetIcon(puushIcon)
 	ui.settingsWindow = w
 
-	var tabs *container.AppTabs
-	goToAccount := func() { tabs.SelectIndex(tabAccount) }
+	var tabs, settingsTabs *container.AppTabs
+	goToAccount := func() {
+		tabs.SelectIndex(tabSettings)
+		settingsTabs.SelectIndex(settingsAccount)
+	}
 
 	accountView, accountViewUpdate := ui.buildAccountTab()
 	homeView, homeRefresh := ui.buildHomeTab(w, goToAccount)
@@ -78,17 +123,24 @@ func (ui *UI) showWindow(tab int) {
 	updateView := ui.buildUpdateTab()
 	aboutView := ui.buildAboutTab()
 
+	// The settings pages sit on the left inside one Settings tab, so the
+	// top row stays short
+	settingsTabs = container.NewAppTabs(
+		container.NewTabItemWithIcon(i18n.T("General"), theme.SettingsIcon(), generalView),
+		container.NewTabItemWithIcon(i18n.T("Key Bindings"), theme.ComputerIcon(), keyBindingsView),
+		container.NewTabItemWithIcon(i18n.T("Account"), theme.AccountIcon(), accountView),
+		container.NewTabItemWithIcon(i18n.T("Update"), theme.DownloadIcon(), updateView),
+		container.NewTabItemWithIcon(i18n.T("Advanced"), theme.MoreHorizontalIcon(), advancedView),
+		container.NewTabItemWithIcon(i18n.T("About"), theme.InfoIcon(), aboutView),
+	)
+	settingsTabs.SetTabLocation(container.TabLocationLeading)
+
 	tabs = container.NewAppTabs(
-		container.NewTabItem(i18n.T("Home"), homeView),
-		container.NewTabItem(i18n.T("Uploads"), uploadsView.content),
-		container.NewTabItem(i18n.T("Queue"), queueView.content),
-		container.NewTabItem(i18n.T("Messages"), messagesView.content),
-		container.NewTabItem(i18n.T("General"), generalView),
-		container.NewTabItem(i18n.T("Key Bindings"), keyBindingsView),
-		container.NewTabItem(i18n.T("Account"), accountView),
-		container.NewTabItem(i18n.T("Update"), updateView),
-		container.NewTabItem(i18n.T("Advanced"), advancedView),
-		container.NewTabItem(i18n.T("About"), aboutView),
+		container.NewTabItemWithIcon(i18n.T("Home"), theme.HomeIcon(), homeView),
+		container.NewTabItemWithIcon(i18n.T("Uploads"), theme.StorageIcon(), uploadsView.content),
+		container.NewTabItemWithIcon(i18n.T("Queue"), theme.UploadIcon(), queueView.content),
+		container.NewTabItemWithIcon(i18n.T("Messages"), theme.MailComposeIcon(), messagesView.content),
+		container.NewTabItemWithIcon(i18n.T("Settings"), theme.SettingsIcon(), settingsTabs),
 	)
 	tabs.OnSelected = func(item *container.TabItem) {
 		if item.Content == uploadsView.content {
@@ -101,6 +153,7 @@ func (ui *UI) showWindow(tab int) {
 		}
 	}
 	ui.windowTabs = tabs
+	ui.settingsTabs = settingsTabs
 	ui.refreshHome = func() {
 		homeRefresh()
 		// Rebuilding the login form would throw away what's being typed in it

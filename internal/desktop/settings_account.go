@@ -48,7 +48,7 @@ func (ui *UI) buildAccountSetup(updateView func()) fyne.CanvasObject {
 
 	emailEntry := widget.NewEntry()
 	passwordEntry := widget.NewPasswordEntry()
-	emailLabel := trailingLabel(i18n.T("Email:"))
+	emailLabel := trailingLabel(i18n.T("Email or username:"))
 	passwordLabel := trailingLabel(i18n.T("Password:"))
 
 	form := container.NewGridWithColumns(2,

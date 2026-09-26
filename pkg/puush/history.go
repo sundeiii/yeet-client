@@ -34,10 +34,12 @@ func NewHistoryItemFromResponse(line string) (*HistoryItem, error) {
 		return nil, errors.New("expected upload ID")
 	}
 
-	uploadTime, err := time.Parse(time.DateTime, parts[1])
+	// Asked for in UTC (u=1), and shown in the computer's own timezone
+	uploadTime, err := time.ParseInLocation(time.DateTime, parts[1], time.UTC)
 	if err != nil {
 		return nil, errors.New("expected upload time")
 	}
+	uploadTime = uploadTime.Local()
 
 	views, err := strconv.Atoi(parts[4])
 	if err != nil {
@@ -84,6 +86,7 @@ func (c *Client) History() ([]*HistoryItem, error) {
 
 	params := url.Values{}
 	params.Add("k", *c.Account.Credentials.Key)
+	params.Add("u", "1") // times in UTC
 
 	request, err := http.NewRequest("POST", c.FormatURL("/api/hist"), strings.NewReader(params.Encode()))
 	if err != nil {

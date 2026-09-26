@@ -1,10 +1,14 @@
 package desktop
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"image/color"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +19,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/sqweek/dialog"
 
 	"github.com/sundeiii/yeet-client/internal/i18n"
 	"github.com/sundeiii/yeet-client/pkg/puush"
@@ -60,6 +65,10 @@ type messagesView struct {
 	problem     *widget.Label
 	entry       *widget.Entry
 	send        *widget.Button
+	attach      *widget.Button
+	sending     int // files still being sent
+
+	thumbs map[string]fyne.Resource // previews of files in chats
 
 	avatars   map[string]fyne.Resource
 	requested map[string]bool
@@ -74,6 +83,7 @@ func (ui *UI) buildMessagesTab() *messagesView {
 		ui:        ui,
 		avatars:   map[string]fyne.Resource{},
 		requested: map[string]bool{},
+		thumbs:    map[string]fyne.Resource{},
 	}
 
 	// Left: the chats, and a box to start one
@@ -127,9 +137,10 @@ func (ui *UI) buildMessagesTab() *messagesView {
 	v.entry.OnSubmitted = func(string) { v.sendMessage() }
 	v.entry.OnChanged = func(string) { v.userTyping() }
 	v.send = widget.NewButtonWithIcon(i18n.T("Send"), theme.MailSendIcon(), v.sendMessage)
+	v.attach = widget.NewButtonWithIcon("", theme.MailAttachmentIcon(), v.pickFiles)
 
 	header := container.NewBorder(nil, widget.NewSeparator(), nil, v.profile, v.title)
-	footer := container.NewVBox(v.typing, v.problem, container.NewBorder(nil, nil, nil, v.send, v.entry))
+	footer := container.NewVBox(v.typing, v.problem, container.NewBorder(nil, nil, v.attach, v.send, v.entry))
 	v.chatPane = container.NewBorder(header, footer, nil, nil, v.scroll)
 	v.chatPane.Hide()
 
@@ -323,6 +334,7 @@ func (v *messagesView) openChat(name string) {
 	v.entry.SetText("")
 	v.entry.Enable()
 	v.send.Enable()
+	v.attach.Enable()
 	v.placeholder.Hide()
 	v.chatPane.Show()
 	if v.visible {
@@ -365,6 +377,7 @@ func (v *messagesView) fetchNew() {
 				if after == 0 {
 					v.entry.Disable()
 					v.send.Disable()
+					v.attach.Disable()
 				}
 				return
 			}
@@ -402,7 +415,7 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 			v.thread.RemoveAll()
 		}
 		v.lastId = message.Id
-		v.thread.Add(messageBubble(message))
+		v.thread.Add(v.messageBubble(message))
 		added = true
 	}
 	if thread.CantSend != "" {
@@ -410,10 +423,12 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 		v.problem.Show()
 		v.entry.Disable()
 		v.send.Disable()
+		v.attach.Disable()
 	} else {
 		v.problem.Hide()
 		v.entry.Enable()
 		v.send.Enable()
+		v.attach.Enable()
 	}
 	if added || first {
 		v.thread.Refresh()
@@ -462,6 +477,100 @@ func (v *messagesView) sendMessage() {
 			v.fetchNew()
 		})
 	}()
+}
+
+// pickFiles lets the user pick files to send in the open chat.
+func (v *messagesView) pickFiles() {
+	if v.with == "" {
+		return
+	}
+	go func() {
+		path, err := dialog.File().Title(i18n.T("Send a file")).Load()
+		if err != nil || path == "" {
+			return
+		}
+		fyne.Do(func() { v.sendFiles([]string{path}) })
+	}()
+}
+
+// dropped sends files dropped on the window into the open chat. It returns
+// false when no chat is open, so they're uploaded as usual.
+func (v *messagesView) dropped(uris []fyne.URI) bool {
+	if !v.visible || v.with == "" || v.attach.Disabled() {
+		return false
+	}
+	var paths []string
+	for _, uri := range uris {
+		if uri.Scheme() == "file" {
+			paths = append(paths, uri.Path())
+		}
+	}
+	v.sendFiles(paths)
+	return true
+}
+
+// sendFiles uploads files into the account's Chat pool and sends each one
+// as a message, one after another.
+func (v *messagesView) sendFiles(paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	with, generation := v.with, v.generation
+	v.sending += len(paths)
+	v.showSending()
+	go func() {
+		// The server says which pool chat files go into
+		poolId := 0
+		if profile, err := v.ui.api.Profile(); err == nil {
+			poolId = profile.ChatPool
+		}
+		for _, path := range paths {
+			err := v.sendFile(with, path, poolId)
+			fyne.Do(func() {
+				v.sending--
+				if generation != v.generation {
+					return
+				}
+				if err != nil {
+					v.showProblem(err)
+				} else {
+					v.problem.Hide()
+					v.fetchNew()
+				}
+				v.showSending()
+			})
+		}
+	}()
+}
+
+func (v *messagesView) sendFile(with, path string, poolId int) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return errors.New(i18n.T("Folders can't be sent, only files."))
+	}
+	link, err := v.ui.api.UploadWithOptions(context.Background(), file, filepath.Base(path), puush.UploadOptions{PoolId: poolId, Size: info.Size()})
+	if err != nil {
+		return err
+	}
+	_, err = v.ui.api.SendFile(with, link, "")
+	return err
+}
+
+func (v *messagesView) showSending() {
+	if v.sending > 0 {
+		v.typing.SetText(i18n.T("Sending %d file(s)…", v.sending))
+		v.typing.Show()
+	} else {
+		v.typing.Hide()
+	}
 }
 
 // userTyping lets the other person know, at most every few seconds.
@@ -514,9 +623,16 @@ func (v *messagesView) onLive(event *puush.LiveEvent) {
 
 // messageBubble is one message: on the right for the user's own, on the
 // left for the other person's.
-func messageBubble(message *puush.ChatMessage) fyne.CanvasObject {
-	text := widget.NewLabel(wrapText(message.Text, bubbleTextWidth))
-	text.Selectable = true
+func (v *messagesView) messageBubble(message *puush.ChatMessage) fyne.CanvasObject {
+	parts := []fyne.CanvasObject{}
+	if message.File != nil {
+		parts = append(parts, v.fileCard(message.File))
+	}
+	if message.Text != "" || message.File == nil {
+		text := widget.NewLabel(wrapText(message.Text, bubbleTextWidth))
+		text.Selectable = true
+		parts = append(parts, text)
+	}
 	stamp := canvas.NewText(message.Time, quietTextColor)
 	stamp.TextSize = 10
 
@@ -529,15 +645,58 @@ func messageBubble(message *puush.ChatMessage) fyne.CanvasObject {
 	background.StrokeColor = color.NRGBA{R: 220, G: 224, B: 228, A: 255}
 	background.StrokeWidth = 1
 
-	inner := container.New(layout.NewCustomPaddedVBoxLayout(-6),
-		text,
-		container.New(layout.NewCustomPaddedLayout(0, 6, 8, 8), stamp),
-	)
+	parts = append(parts, container.New(layout.NewCustomPaddedLayout(0, 6, 8, 8), stamp))
+	inner := container.New(layout.NewCustomPaddedVBoxLayout(-6), parts...)
 	bubble := container.NewStack(background, inner)
 	if message.Mine {
 		return container.NewHBox(layout.NewSpacer(), bubble)
 	}
 	return container.NewHBox(bubble, layout.NewSpacer())
+}
+
+// fileCard is a file sent in a chat: a preview for pictures and videos,
+// and its name (which opens it) and size.
+func (v *messagesView) fileCard(file *puush.ChatFile) fyne.CanvasObject {
+	link, _ := url.Parse(file.Url)
+	name := widget.NewHyperlink(file.Name, link)
+	name.Truncation = fyne.TextTruncateEllipsis
+	size := canvas.NewText(file.Size, quietTextColor)
+	size.TextSize = 11
+
+	preview := canvas.NewImageFromResource(theme.FileIcon())
+	preview.FillMode = canvas.ImageFillContain
+	if file.Kind == "image" || file.Kind == "video" {
+		preview.SetMinSize(fyne.NewSize(bubbleTextWidth*0.7, 150))
+	} else {
+		preview.SetMinSize(fyne.NewSquareSize(40))
+	}
+	if resource, ok := v.thumbs[file.Thumb]; ok {
+		preview.Resource = resource
+	} else if file.Thumb != "" {
+		go func() {
+			data, err := v.ui.api.Picture(file.Thumb)
+			if err != nil {
+				return
+			}
+			// File icons are SVG pictures
+			name := "thumb"
+			if bytes.HasPrefix(bytes.TrimSpace(data), []byte("<svg")) || bytes.HasPrefix(bytes.TrimSpace(data), []byte("<?xml")) {
+				name = "thumb.svg"
+			}
+			resource := fyne.NewStaticResource(name, data)
+			fyne.Do(func() {
+				v.thumbs[file.Thumb] = resource
+				preview.Resource = resource
+				preview.Refresh()
+			})
+		}()
+	}
+
+	details := container.New(layout.NewCustomPaddedVBoxLayout(-8), name, container.New(layout.NewCustomPaddedLayout(0, 0, 8, 8), size))
+	if file.Kind == "image" || file.Kind == "video" {
+		return container.NewVBox(container.NewPadded(preview), details)
+	}
+	return container.NewBorder(nil, nil, container.NewPadded(preview), nil, details)
 }
 
 func quietLabel(text string) fyne.CanvasObject {

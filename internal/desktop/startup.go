@@ -50,7 +50,7 @@ func (ui *UI) ShowStartupWindow() {
 	registerBtn.Resize(fyne.NewSize(250, 28))
 
 	// Right-aligned next to the boxes, since the words differ in length per language
-	emailLabel := canvas.NewText(i18n.T("Email:"), color.Black)
+	emailLabel := canvas.NewText(i18n.T("Email or username:"), color.Black)
 	emailLabel.Move(fyne.NewPos(192-emailLabel.MinSize().Width, 207))
 
 	passwordLabel := canvas.NewText(i18n.T("Password:"), color.Black)
@@ -172,6 +172,7 @@ func (ui *UI) ShowStartupWindow() {
 
 	okayBtn = NewBorderedButton(i18n.T("Okay, I've got it!"), func() {
 		w.Close()
+		ui.ShowAppWindow()
 	})
 	okayBtn.Instance.Disable()
 

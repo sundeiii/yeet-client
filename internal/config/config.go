@@ -101,6 +101,10 @@ type CaptureConfig struct {
 	LastArea []int
 	// EditBeforeUpload opens the editor after every screenshot
 	EditBeforeUpload bool
+	// NamePattern names screenshots, with {date}, {time} and {window}
+	NamePattern string
+	// RecordingFormat is what screen recordings are saved as: mp4 or gif
+	RecordingFormat string
 	// LocalCopies maps upload links to the file they came from, for "Show in Folder"
 	LocalCopies map[string]string
 }
@@ -146,6 +150,7 @@ type HotkeyConfig struct {
 	RepeatArea              string
 	DelayedArea             string
 	EditArea                string
+	Record                  string
 }
 
 type MiscConfig struct {
@@ -212,6 +217,7 @@ func DefaultConfig() *Config {
 			MonitorDirectories:    []string{},
 			ScreenshotProvider:    "",
 			DelaySeconds:          3,
+			RecordingFormat:       "mp4",
 		},
 		Hotkeys: HotkeyConfig{
 			ScreenSelection:         "Ctrl+Shift+4",
@@ -223,6 +229,7 @@ func DefaultConfig() *Config {
 			RepeatArea:              "Ctrl+Shift+6",
 			DelayedArea:             "Ctrl+Shift+7",
 			EditArea:                "Ctrl+Shift+8",
+			Record:                  "Ctrl+Shift+9",
 		},
 		Misc: MiscConfig{
 			LastUpdate: time.Now(),

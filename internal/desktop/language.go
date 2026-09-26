@@ -46,6 +46,9 @@ func (ui *UI) setLanguage(code string) {
 	// The window is built with the texts of the old language
 	if ui.settingsWindow != nil {
 		ui.settingsWindow.Close()
-		ui.showWindow(tabGeneral)
+		ui.showWindow(tabSettings)
+	} else if ui.startupWindow != nil {
+		ui.startupWindow.Close()
+		ui.ShowStartupWindow()
 	}
 }

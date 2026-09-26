@@ -16,6 +16,7 @@ func (c *Client) Delete(id int) ([]*HistoryItem, error) {
 
 	params := url.Values{}
 	params.Add("k", *c.Account.Credentials.Key)
+	params.Add("u", "1") // times in UTC
 	params.Add("i", strconv.Itoa(id))
 	params.Add("z", "poop")
 
