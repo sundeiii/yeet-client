@@ -91,19 +91,17 @@ func dayLine(day, now time.Time) fyne.CanvasObject {
 
 // ---- One message ----
 
-// messageRow is a message that lights up under the mouse, with its menu
-// on right-click or in the bar that shows then.
+// messageRow is one message, lit up while the mouse is over it (the
+// threadArea decides which one that is), with its menu on right-click.
 type messageRow struct {
 	widget.BaseWidget
 
+	message   *puush.ChatMessage
 	content   fyne.CanvasObject
 	highlight *canvas.Rectangle
 	hoverTime *canvas.Text // the time, on messages under someone's name
-	actions   fyne.CanvasObject
 	menu      *fyne.Menu
 }
-
-var _ desktop.Hoverable = (*messageRow)(nil)
 
 func (v *messagesView) messageRow(message *puush.ChatMessage, header bool) fyne.CanvasObject {
 	body := container.New(layout.NewCustomPaddedVBoxLayout(0), v.messageContent(message)...)
@@ -118,7 +116,7 @@ func (v *messagesView) messageRow(message *puush.ChatMessage, header bool) fyne.
 		nameText := canvas.NewText(name, nameColor)
 		nameText.TextSize = 13
 		nameText.TextStyle = fyne.TextStyle{Bold: true}
-		when := canvas.NewText(messageTime(message, time.Now()), quietTextColor)
+		when := canvas.NewText(headerTime(message, time.Now()), quietTextColor)
 		when.TextSize = 10
 		nameLine := container.New(layout.NewCustomPaddedLayout(6, 0, 4, 0),
 			container.NewHBox(nameText, container.NewCenter(when)))
@@ -127,49 +125,37 @@ func (v *messagesView) messageRow(message *puush.ChatMessage, header bool) fyne.
 		avatarBox := container.New(layout.NewCustomPaddedLayout(6, 0, 10, 10), container.NewVBox(avatar))
 		content = container.NewBorder(nil, nil, avatarBox, nil,
 			container.New(layout.NewCustomPaddedVBoxLayout(-4), nameLine, body))
+		if message.Reply != nil && !message.Removed {
+			// Like Discord: the message it answers on a line above the name,
+			// joined to the avatar by a curved line
+			content = container.New(layout.NewCustomPaddedVBoxLayout(-6), v.replyLine(message.Reply), content)
+		}
 		content = container.New(layout.NewCustomPaddedLayout(6, 0, 0, 0), content)
 	}
 
-	row := &messageRow{highlight: canvas.NewRectangle(hoverColor)}
+	row := &messageRow{message: message, highlight: canvas.NewRectangle(hoverColor)}
 	if !header {
 		// Where the avatar would be, the time shows while the mouse is over it
 		gap := canvas.NewRectangle(color.Transparent)
 		gap.SetMinSize(fyne.NewSize(avatarColumn, 0))
 		// Always there, but see-through until the mouse is over the message,
 		// so showing it doesn't move anything
-		row.hoverTime = canvas.NewText(messageTime(message, time.Now()), color.Transparent)
+		row.hoverTime = canvas.NewText(clockTime(message), color.Transparent)
 		row.hoverTime.TextSize = 10
 		row.hoverTime.Alignment = fyne.TextAlignTrailing
 		gutter := container.NewStack(gap, container.NewVBox(
-			container.New(layout.NewCustomPaddedLayout(4, 0, 0, 8), row.hoverTime)))
+			container.New(layout.NewCustomPaddedLayout(3, 0, 0, 8), row.hoverTime)))
 		content = container.NewBorder(nil, nil, gutter, nil, body)
 	}
 	row.content = content
 	row.highlight.Hide()
-	if row.menu = v.messageMenu(message); row.menu != nil {
-		var more *tapArea
-		reply := newTapArea(toolIcon(theme.MailReplyIcon()), func() { v.startReply(message) })
-		more = newTapArea(toolIcon(theme.MoreHorizontalIcon()), func() {
-			position := fyne.CurrentApp().Driver().AbsolutePositionForObject(more)
-			row.showMenu(position.AddXY(0, more.Size().Height))
-		})
-		background := canvas.NewRectangle(cardColor)
-		background.StrokeColor = cardBorderColor
-		background.StrokeWidth = 1
-		background.CornerRadius = 5
-		row.actions = container.NewStack(background, container.NewHBox(reply, more))
-		row.actions.Hide()
-	}
+	row.menu = v.messageMenu(message)
 	row.ExtendBaseWidget(row)
 	return row
 }
 
 func (row *messageRow) CreateRenderer() fyne.WidgetRenderer {
-	objects := []fyne.CanvasObject{row.highlight, row.content}
-	if row.actions != nil {
-		objects = append(objects, container.New(&cornerLayout{}, row.actions))
-	}
-	return widget.NewSimpleRenderer(container.NewStack(objects...))
+	return widget.NewSimpleRenderer(container.NewStack(row.highlight, row.content))
 }
 
 func (row *messageRow) TappedSecondary(event *fyne.PointEvent) {
@@ -185,52 +171,166 @@ func (row *messageRow) showMenu(at fyne.Position) {
 	}
 }
 
-func (row *messageRow) MouseIn(*desktop.MouseEvent) {
-	row.highlight.Show()
-	if row.hoverTime != nil {
-		row.hoverTime.Color = quietTextColor
-		row.hoverTime.Refresh()
-	}
-	if row.actions != nil {
-		row.actions.Show()
-	}
-}
-
-func (row *messageRow) MouseMoved(*desktop.MouseEvent) {}
-
-func (row *messageRow) MouseOut() {
-	row.highlight.Hide()
+// setHovered lights the message up, and shows its time on the left.
+func (row *messageRow) setHovered(on bool) {
+	row.highlight.Hidden = !on
+	row.highlight.Refresh()
 	if row.hoverTime != nil {
 		row.hoverTime.Color = color.Transparent
+		if on {
+			row.hoverTime.Color = quietTextColor
+		}
 		row.hoverTime.Refresh()
-	}
-	if row.actions != nil {
-		row.actions.Hide()
 	}
 }
 
-// cornerLayout puts the bar in the top right corner of the message, over
-// it, without making the row any bigger.
-type cornerLayout struct{}
+// ---- Hovering, like Discord ----
 
-func (*cornerLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+// threadArea follows the mouse over the whole thread and decides which
+// message is hovered. There's one action bar, on the hovered message's top
+// right edge, sticking up over the message above. While the mouse is on the
+// bar, its message stays hovered, even over the part that sticks out; that's
+// why this isn't left to each message on its own.
+type threadArea struct {
+	widget.BaseWidget
+
+	v       *messagesView
+	bar     *fyne.Container
+	buttons *fyne.Container
+	overlay *fyne.Container
+	hovered *messageRow
+	inside  bool
+	mouse   fyne.Position // where the mouse is, on the screen
+}
+
+var _ desktop.Hoverable = (*threadArea)(nil)
+
+func newThreadArea(v *messagesView) *threadArea {
+	area := &threadArea{v: v, buttons: container.NewHBox()}
+	background := canvas.NewRectangle(cardColor)
+	background.StrokeColor = cardBorderColor
+	background.StrokeWidth = 1
+	background.CornerRadius = 6
+	area.bar = container.NewStack(background, container.New(layout.NewCustomPaddedLayout(1, 1, 2, 2), area.buttons))
+	area.bar.Hide()
+	area.overlay = container.New(&barLayout{area: area}, area.bar)
+	area.ExtendBaseWidget(area)
+	return area
+}
+
+func (area *threadArea) CreateRenderer() fyne.WidgetRenderer {
+	// The bar is drawn over the messages, so it can overlap the one above
+	return widget.NewSimpleRenderer(container.NewStack(area.v.thread, area.overlay))
+}
+
+func (area *threadArea) MouseIn(event *desktop.MouseEvent) {
+	area.inside = true
+	area.track(event.AbsolutePosition)
+}
+
+func (area *threadArea) MouseMoved(event *desktop.MouseEvent) {
+	area.track(event.AbsolutePosition)
+}
+
+func (area *threadArea) MouseOut() {
+	area.inside = false
+	area.hover(nil)
+}
+
+// recheck looks again at what's under the mouse, after scrolling or when
+// messages were added, since the mouse didn't move but the messages did.
+func (area *threadArea) recheck() {
+	if area.inside {
+		area.track(area.mouse)
+	} else {
+		area.hover(nil)
+	}
+}
+
+// forget drops the hovered message, e.g. before the thread is rebuilt.
+func (area *threadArea) forget() {
+	area.hovered = nil
+	area.bar.Hide()
+}
+
+func (area *threadArea) track(mouse fyne.Position) {
+	area.mouse = mouse
+	origin := fyne.CurrentApp().Driver().AbsolutePositionForObject(area)
+	at := mouse.Subtract(origin)
+
+	// On the bar: its message stays hovered
+	if area.hovered != nil && area.bar.Visible() && inside(at, area.bar.Position(), area.bar.Size()) {
+		return
+	}
+	for _, object := range area.v.thread.Objects {
+		row, ok := object.(*messageRow)
+		if ok && object.Visible() && at.Y >= row.Position().Y && at.Y < row.Position().Y+row.Size().Height {
+			area.hover(row)
+			return
+		}
+	}
+	area.hover(nil)
+}
+
+func inside(at, position fyne.Position, size fyne.Size) bool {
+	return at.X >= position.X && at.X < position.X+size.Width && at.Y >= position.Y && at.Y < position.Y+size.Height
+}
+
+func (area *threadArea) hover(row *messageRow) {
+	if row == area.hovered {
+		return
+	}
+	if area.hovered != nil {
+		area.hovered.setHovered(false)
+	}
+	area.hovered = row
+	if row == nil || row.menu == nil {
+		if row != nil {
+			row.setHovered(true)
+		}
+		area.bar.Hide()
+		return
+	}
+	row.setHovered(true)
+
+	// The bar's buttons for this message
+	message, v := row.message, area.v
+	area.buttons.RemoveAll()
+	area.buttons.Add(newTapArea(toolIcon(theme.MailReplyIcon()), func() { v.startReply(message) }))
+	if message.Mine && !message.Removed {
+		area.buttons.Add(newTapArea(toolIcon(theme.DocumentCreateIcon()), func() { v.startEditing(message) }))
+	}
+	var more *tapArea
+	more = newTapArea(toolIcon(theme.MoreHorizontalIcon()), func() {
+		position := fyne.CurrentApp().Driver().AbsolutePositionForObject(more)
+		row.showMenu(position.AddXY(0, more.Size().Height))
+	})
+	area.buttons.Add(more)
+	area.bar.Show()
+	area.overlay.Refresh()
+}
+
+// barLayout puts the bar on the hovered message's top right edge, half over
+// the message above, like Discord.
+type barLayout struct{ area *threadArea }
+
+func (l *barLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	row := l.area.hovered
+	if row == nil {
+		return
+	}
 	for _, object := range objects {
 		min := object.MinSize()
 		object.Resize(min)
-		// Inside the lit-up message, so it's clearly part of it; centred on
-		// messages that are only one short line
-		y := float32(3)
-		if size.Height < min.Height+6 {
-			y = (size.Height - min.Height) / 2
-		}
-		object.Move(fyne.NewPos(size.Width-min.Width-12, y))
+		y := max(row.Position().Y-min.Height/2, 0)
+		object.Move(fyne.NewPos(size.Width-min.Width-16, y))
 	}
 }
 
-func (*cornerLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(0, 0) }
+func (*barLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(0, 0) }
 
 // tapArea is something to click that isn't a hover target itself, so the
-// message under it stays lit while the mouse is over it.
+// thread keeps following the mouse over it.
 type tapArea struct {
 	widget.BaseWidget
 
@@ -258,9 +358,8 @@ func (area *tapArea) Cursor() desktop.Cursor { return desktop.PointerCursor }
 
 func toolIcon(resource fyne.Resource) fyne.CanvasObject {
 	icon := canvas.NewImageFromResource(theme.NewThemedResource(resource))
-	icon.SetMinSize(fyne.NewSquareSize(14))
-	// Small enough to fit inside a message that's one short line
-	return container.New(layout.NewCustomPaddedLayout(2, 2, 6, 6), icon)
+	icon.SetMinSize(fyne.NewSquareSize(18))
+	return container.New(layout.NewCustomPaddedLayout(5, 5, 6, 6), icon)
 }
 
 // linkText is a file name that opens the file.
@@ -283,9 +382,6 @@ func (v *messagesView) messageContent(message *puush.ChatMessage) []fyne.CanvasO
 		return []fyne.CanvasObject{gone}
 	}
 	var parts []fyne.CanvasObject
-	if message.Reply != nil {
-		parts = append(parts, v.replyQuote(message.Reply))
-	}
 	if message.File != nil {
 		parts = append(parts, v.fileCard(message.File))
 	}
@@ -309,25 +405,46 @@ func (v *messagesView) messageContent(message *puush.ChatMessage) []fyne.CanvasO
 	return parts
 }
 
-// replyQuote shows the message a reply answers, in short.
-func (v *messagesView) replyQuote(reply *puush.ChatReply) fyne.CanvasObject {
-	name := v.displayName()
+// replyLine shows the message a reply answers, above the name: a curved
+// line from the avatar, then their small avatar, name and the message.
+func (v *messagesView) replyLine(reply *puush.ChatReply) fyne.CanvasObject {
+	name, avatarLink, nameColor := v.displayName(), v.otherAvatar(), otherNameColor
 	if reply.Mine {
-		name = i18n.T("You")
+		name, avatarLink, nameColor = v.ownName(), v.ownAvatar(), ownNameColor
 	}
 	text := reply.Text
 	if reply.Removed {
 		text = i18n.T("Message deleted")
 	}
-	who := canvas.NewText(name, theme.Color(theme.ColorNamePrimary))
+	avatar := v.avatarImage(avatarLink)
+	avatar.SetMinSize(fyne.NewSquareSize(16))
+	avatar.CornerRadius = 8
+	who := canvas.NewText(name, nameColor)
 	who.TextSize = 11
 	what := canvas.NewText(fitText(oneLine(text), quoteWidth, 11), quietTextColor)
 	what.TextSize = 11
-	line := canvas.NewRectangle(cardBorderColor)
-	line.SetMinSize(fyne.NewSize(3, 0))
-	quote := container.NewBorder(nil, nil, line, nil,
-		container.New(layout.NewCustomPaddedLayout(0, 0, 6, 0), container.NewHBox(who, what)))
-	return container.New(layout.NewCustomPaddedLayout(4, 2, 4, 0), quote)
+
+	curve := container.New(&replyCurve{}, canvas.NewLine(cardBorderColor), canvas.NewLine(cardBorderColor))
+	return container.NewBorder(nil, nil, curve, nil,
+		container.New(layout.NewCustomPaddedLayout(2, 0, 4, 0),
+			container.NewHBox(container.NewCenter(avatar), who, what)))
+}
+
+// replyCurve draws the line from above the avatar to the reply: up from the
+// avatar's middle, then right.
+type replyCurve struct{}
+
+func (*replyCurve) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	x := float32(10 + avatarSize/2)
+	middle := size.Height / 2
+	up, across := objects[0].(*canvas.Line), objects[1].(*canvas.Line)
+	up.StrokeWidth, across.StrokeWidth = 2, 2
+	up.Position1, up.Position2 = fyne.NewPos(x, size.Height+4), fyne.NewPos(x, middle)
+	across.Position1, across.Position2 = fyne.NewPos(x, middle), fyne.NewPos(size.Width-2, middle)
+}
+
+func (*replyCurve) MinSize([]fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(avatarColumn, 20)
 }
 
 // fileCard is a file sent in a chat: pictures and videos as a preview, other
@@ -458,4 +575,28 @@ func (v *messagesView) avatarImage(link string) *canvas.Image {
 		v.avatarImages[link] = append(v.avatarImages[link], avatar)
 	}
 	return avatar
+}
+
+// headerTime is the time next to a name, like Discord: "Today at 16:58",
+// "Yesterday at 21:39", or the date.
+func headerTime(message *puush.ChatMessage, now time.Time) string {
+	if message.At <= 0 {
+		return message.Time // an older server
+	}
+	sent := time.Unix(message.At, 0).Local()
+	switch {
+	case sameDay(sent, now):
+		return i18n.T("Today at %s", sent.Format("15:04"))
+	case sameDay(sent, now.AddDate(0, 0, -1)):
+		return i18n.T("Yesterday at %s", sent.Format("15:04"))
+	}
+	return i18n.Date(sent) + " " + sent.Format("15:04")
+}
+
+// clockTime is just the time of day, for messages under someone's name.
+func clockTime(message *puush.ChatMessage) string {
+	if message.At <= 0 {
+		return message.Time
+	}
+	return time.Unix(message.At, 0).Local().Format("15:04")
 }

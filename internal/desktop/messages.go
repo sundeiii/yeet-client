@@ -33,7 +33,8 @@ const groupWindow = 7 * time.Minute
 
 var (
 	quietTextColor  = color.NRGBA{R: 110, G: 110, B: 110, A: 255}
-	hoverColor      = color.NRGBA{R: 0, G: 0, B: 0, A: 12}
+	hoverColor      = color.NRGBA{R: 242, G: 243, B: 245, A: 255}
+	threadColor     = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	cardColor       = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	cardBorderColor = color.NRGBA{R: 220, G: 224, B: 228, A: 255}
 	otherNameColor  = color.NRGBA{R: 0, G: 102, B: 204, A: 255}
@@ -67,6 +68,7 @@ type messagesView struct {
 	presence    *canvas.Text
 	profile     *widget.Hyperlink
 	thread      *fyne.Container
+	hoverArea   *threadArea
 	scroll      *container.Scroll
 	typing      *widget.Label
 	typingTimer *time.Timer
@@ -157,7 +159,9 @@ func (ui *UI) buildMessagesTab() *messagesView {
 	v.presence = canvas.NewText("", quietTextColor)
 	v.presence.TextSize = 11
 	v.thread = container.New(layout.NewCustomPaddedVBoxLayout(0))
-	v.scroll = container.NewVScroll(container.NewPadded(v.thread))
+	v.hoverArea = newThreadArea(v)
+	v.scroll = container.NewVScroll(container.NewPadded(v.hoverArea))
+	v.scroll.OnScrolled = func(fyne.Position) { v.hoverArea.recheck() }
 	v.typing = widget.NewLabel("")
 	v.typing.Importance = widget.LowImportance
 	v.typing.Hide()
@@ -187,7 +191,9 @@ func (ui *UI) buildMessagesTab() *messagesView {
 	titles := v.titles
 	header := container.NewBorder(nil, widget.NewSeparator(), nil, v.profile, titles)
 	footer := container.NewVBox(v.typing, v.problem, v.composeBar, container.NewBorder(nil, nil, v.attach, v.send, v.entry))
-	v.chatPane = container.NewBorder(header, footer, nil, nil, v.scroll)
+	// The messages on white, like Discord's light theme
+	v.chatPane = container.NewBorder(header, footer, nil, nil,
+		container.NewStack(canvas.NewRectangle(threadColor), v.scroll))
 	v.chatPane.Hide()
 
 	hint := widget.NewLabel(i18n.T("Pick a chat, or start one with someone's username."))
@@ -443,6 +449,7 @@ func (v *messagesView) openChat(name string) {
 	v.generation++
 	v.with = name
 	v.lastId = 0
+	v.hoverArea.forget()
 	v.thread.RemoveAll()
 	v.prev = nil
 	v.seen = nil
@@ -530,6 +537,7 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 		if v.visible {
 			v.ui.tray.SetOpenChat(thread.With)
 		}
+		v.hoverArea.forget()
 		v.thread.RemoveAll()
 		v.hint = len(thread.Messages) == 0
 		if v.hint {
@@ -543,6 +551,7 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 		}
 		if v.hint {
 			v.hint = false
+			v.hoverArea.forget()
 			v.thread.RemoveAll()
 		}
 		if v.seen != nil {
@@ -571,6 +580,7 @@ func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
 	}
 	if added || first {
 		v.thread.Refresh()
+		v.hoverArea.recheck()
 		if v.keepOffset != nil {
 			v.scroll.Offset = *v.keepOffset
 			v.scroll.Refresh()
@@ -900,6 +910,7 @@ func (v *messagesView) loggedOut() {
 	v.generation++
 	v.with = ""
 	v.lastId = 0
+	v.hoverArea.forget()
 	v.thread.RemoveAll()
 	v.chatPane.Hide()
 	v.placeholder.Show()
