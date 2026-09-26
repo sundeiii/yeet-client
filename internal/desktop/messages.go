@@ -1,0 +1,607 @@
+package desktop
+
+import (
+	"encoding/json"
+	"errors"
+	"image/color"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
+
+	"github.com/sundeiii/yeet-client/internal/i18n"
+	"github.com/sundeiii/yeet-client/pkg/puush"
+)
+
+// Chat bubbles are at most this wide; the text is wrapped to fit.
+const bubbleTextWidth = 300
+
+var (
+	myBubbleColor    = color.NRGBA{R: 214, G: 232, B: 255, A: 255}
+	theirBubbleColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	quietTextColor   = color.NRGBA{R: 110, G: 110, B: 110, A: 255}
+)
+
+// messagesView is the app window's chats: the list on the left, the open
+// chat on the right. New messages come in over the live connection.
+// Its fields are only touched on the main thread.
+type messagesView struct {
+	ui *UI
+
+	content    fyne.CanvasObject
+	list       *widget.List
+	listStatus *widget.Label
+	newChat    *widget.Entry
+	chats      []*puush.Chat
+
+	// The open chat
+	with        string // username, as the server writes it
+	generation  int    // answers for a chat that's no longer open are dropped
+	lastId      int
+	hint        bool // the thread shows "Say hi!"
+	fetching    bool
+	fetchAgain  bool
+	placeholder fyne.CanvasObject
+	chatPane    fyne.CanvasObject
+	title       *widget.Label
+	profile     *widget.Hyperlink
+	thread      *fyne.Container
+	scroll      *container.Scroll
+	typing      *widget.Label
+	typingTimer *time.Timer
+	typingSent  time.Time
+	problem     *widget.Label
+	entry       *widget.Entry
+	send        *widget.Button
+
+	avatars   map[string]fyne.Resource
+	requested map[string]bool
+
+	visible     bool
+	reloadTimer *time.Timer
+	stopLive    func()
+}
+
+func (ui *UI) buildMessagesTab() *messagesView {
+	v := &messagesView{
+		ui:        ui,
+		avatars:   map[string]fyne.Resource{},
+		requested: map[string]bool{},
+	}
+
+	// Left: the chats, and a box to start one
+	v.newChat = widget.NewEntry()
+	v.newChat.SetPlaceHolder(i18n.T("Username"))
+	start := func() {
+		name := strings.TrimPrefix(strings.TrimSpace(v.newChat.Text), "@")
+		if name != "" {
+			v.newChat.SetText("")
+			v.list.UnselectAll()
+			v.openChat(name)
+		}
+	}
+	v.newChat.OnSubmitted = func(string) { start() }
+	startButton := widget.NewButtonWithIcon("", theme.ContentAddIcon(), start)
+
+	v.listStatus = widget.NewLabel("")
+	v.listStatus.Wrapping = fyne.TextWrapWord
+	v.listStatus.Importance = widget.LowImportance
+
+	v.list = widget.NewList(
+		func() int { return len(v.chats) },
+		v.createChatRow,
+		v.updateChatRow,
+	)
+	v.list.OnSelected = func(id widget.ListItemID) {
+		if id < len(v.chats) {
+			v.openChat(v.chats[id].With)
+		}
+	}
+	left := container.NewBorder(
+		container.NewBorder(nil, nil, nil, startButton, v.newChat),
+		v.listStatus, nil, nil, v.list,
+	)
+
+	// Right: the open chat
+	v.title = widget.NewLabel("")
+	v.title.Truncation = fyne.TextTruncateEllipsis
+	v.profile = widget.NewHyperlink(i18n.T("Profile"), nil)
+	v.thread = container.NewVBox()
+	v.scroll = container.NewVScroll(container.NewPadded(v.thread))
+	v.typing = widget.NewLabel("")
+	v.typing.Importance = widget.LowImportance
+	v.typing.Hide()
+	v.problem = widget.NewLabel("")
+	v.problem.Wrapping = fyne.TextWrapWord
+	v.problem.Importance = widget.DangerImportance
+	v.problem.Hide()
+	v.entry = widget.NewEntry()
+	v.entry.SetPlaceHolder(i18n.T("Write a message"))
+	v.entry.OnSubmitted = func(string) { v.sendMessage() }
+	v.entry.OnChanged = func(string) { v.userTyping() }
+	v.send = widget.NewButtonWithIcon(i18n.T("Send"), theme.MailSendIcon(), v.sendMessage)
+
+	header := container.NewBorder(nil, widget.NewSeparator(), nil, v.profile, v.title)
+	footer := container.NewVBox(v.typing, v.problem, container.NewBorder(nil, nil, nil, v.send, v.entry))
+	v.chatPane = container.NewBorder(header, footer, nil, nil, v.scroll)
+	v.chatPane.Hide()
+
+	hint := widget.NewLabel(i18n.T("Pick a chat, or start one with someone's username."))
+	hint.Alignment = fyne.TextAlignCenter
+	hint.Wrapping = fyne.TextWrapWord
+	hint.Importance = widget.LowImportance
+	v.placeholder = container.NewCenter(container.NewGridWrap(fyne.NewSize(300, 80), hint))
+
+	split := container.NewHSplit(left, container.NewStack(v.placeholder, v.chatPane))
+	split.Offset = 0.32
+	v.content = split
+
+	v.stopLive = ui.tray.OnLive(v.onLive)
+	return v
+}
+
+// show runs when the tab is shown.
+func (v *messagesView) show() {
+	if v.visible {
+		return
+	}
+	v.visible = true
+	v.loadChats()
+	if v.with != "" {
+		v.ui.tray.SetOpenChat(v.with)
+		v.fetchNew()
+	}
+}
+
+// hide runs when another tab is shown or the window closes.
+func (v *messagesView) hide() {
+	v.visible = false
+	v.ui.tray.SetOpenChat("")
+}
+
+func (v *messagesView) close() {
+	v.hide()
+	if v.stopLive != nil {
+		v.stopLive()
+	}
+}
+
+// ---- The list of chats ----
+
+type chatRow struct {
+	widget.BaseWidget
+
+	avatar  *canvas.Image
+	name    *widget.Label
+	preview *widget.Label
+	unread  *widget.Label
+}
+
+func (v *messagesView) createChatRow() fyne.CanvasObject {
+	row := &chatRow{
+		avatar:  canvas.NewImageFromResource(theme.AccountIcon()),
+		name:    widget.NewLabel(""),
+		preview: widget.NewLabel(""),
+		unread:  widget.NewLabel(""),
+	}
+	row.avatar.FillMode = canvas.ImageFillContain
+	row.avatar.SetMinSize(fyne.NewSquareSize(34))
+	row.name.Truncation = fyne.TextTruncateEllipsis
+	row.preview.Truncation = fyne.TextTruncateEllipsis
+	row.preview.Importance = widget.LowImportance
+	row.unread.Importance = widget.HighImportance
+	row.ExtendBaseWidget(row)
+	return row
+}
+
+func (row *chatRow) CreateRenderer() fyne.WidgetRenderer {
+	text := container.New(layout.NewCustomPaddedVBoxLayout(-12), row.name, row.preview)
+	return widget.NewSimpleRenderer(container.NewBorder(nil, nil, container.NewCenter(row.avatar), row.unread, text))
+}
+
+func (v *messagesView) updateChatRow(id widget.ListItemID, object fyne.CanvasObject) {
+	row, ok := object.(*chatRow)
+	if !ok || id >= len(v.chats) {
+		return
+	}
+	chat := v.chats[id]
+	row.name.SetText(chat.Name)
+	preview := strings.Join(strings.Fields(chat.Text), " ")
+	if chat.FromMe {
+		preview = i18n.T("You: %s", preview)
+	}
+	row.preview.SetText(preview)
+	if chat.Unread > 0 {
+		row.unread.SetText(unreadText(chat.Unread))
+		row.unread.Show()
+	} else {
+		row.unread.Hide()
+	}
+	row.avatar.Resource = v.avatar(chat.Avatar)
+	row.avatar.Refresh()
+}
+
+// avatar returns a profile picture, downloading it the first time.
+func (v *messagesView) avatar(link string) fyne.Resource {
+	if resource, ok := v.avatars[link]; ok {
+		return resource
+	}
+	if link != "" && !v.requested[link] {
+		v.requested[link] = true
+		go func() {
+			data, err := v.ui.api.Picture(link)
+			if err != nil {
+				return
+			}
+			resource := fyne.NewStaticResource("avatar.png", data)
+			fyne.Do(func() {
+				v.avatars[link] = resource
+				v.list.Refresh()
+			})
+		}()
+	}
+	return theme.AccountIcon()
+}
+
+func (v *messagesView) loadChats() {
+	if !v.ui.api.Account.Credentials.HasApiKey() {
+		v.chats = nil
+		v.list.Refresh()
+		v.listStatus.SetText(i18n.T("Log in to chat with people."))
+		v.listStatus.Show()
+		return
+	}
+	go func() {
+		chats, unread, err := v.ui.api.Chats()
+		fyne.Do(func() {
+			status := ""
+			switch {
+			case errors.Is(err, puush.ErrNotSupported):
+				status = i18n.T("This server doesn't have chats yet.")
+			case err != nil:
+				status = puush.FormatError(err)
+			case len(chats) == 0:
+				status = i18n.T("No chats yet. Start one with someone's username.")
+			}
+			v.listStatus.SetText(status)
+			if status == "" {
+				v.listStatus.Hide()
+			} else {
+				v.listStatus.Show()
+			}
+			if err != nil {
+				return
+			}
+			v.chats = chats
+			v.list.Refresh()
+			v.ui.tray.ChatRead(unread)
+			// Keep the open chat highlighted, wherever it moved to
+			for i, chat := range chats {
+				if strings.EqualFold(chat.With, v.with) {
+					v.list.Select(i)
+				}
+			}
+		})
+	}()
+}
+
+// reloadChatsSoon reloads the list once, after a burst of messages.
+func (v *messagesView) reloadChatsSoon() {
+	if v.reloadTimer != nil {
+		v.reloadTimer.Stop()
+	}
+	v.reloadTimer = time.AfterFunc(400*time.Millisecond, func() {
+		fyne.Do(func() {
+			if v.visible {
+				v.loadChats()
+			}
+		})
+	})
+}
+
+// ---- The open chat ----
+
+func (v *messagesView) openChat(name string) {
+	if strings.EqualFold(name, v.with) {
+		return
+	}
+	v.generation++
+	v.with = name
+	v.lastId = 0
+	v.thread.RemoveAll()
+	v.title.SetText(name)
+	v.setProfileLink(name)
+	v.typing.Hide()
+	v.problem.Hide()
+	v.entry.SetText("")
+	v.entry.Enable()
+	v.send.Enable()
+	v.placeholder.Hide()
+	v.chatPane.Show()
+	if v.visible {
+		v.ui.tray.SetOpenChat(name)
+	}
+	v.fetchNew()
+}
+
+func (v *messagesView) setProfileLink(name string) {
+	link, err := url.Parse(v.ui.api.FormatURL("/u/" + url.PathEscape(name)))
+	if err == nil {
+		v.profile.SetURL(link)
+	}
+}
+
+// fetchNew loads the messages after the last one shown (all of them for a
+// chat that was just opened), which also marks them read.
+func (v *messagesView) fetchNew() {
+	if v.with == "" {
+		return
+	}
+	if v.fetching {
+		v.fetchAgain = true
+		return
+	}
+	v.fetching = true
+	with, after, generation := v.with, v.lastId, v.generation
+	go func() {
+		thread, err := v.ui.api.ChatWith(with, after)
+		fyne.Do(func() {
+			v.fetching = false
+			if generation != v.generation {
+				// Another chat was opened meanwhile
+				v.fetchAgain = false
+				v.fetchNew()
+				return
+			}
+			if err != nil {
+				v.showProblem(err)
+				if after == 0 {
+					v.entry.Disable()
+					v.send.Disable()
+				}
+				return
+			}
+			v.showThread(thread, after == 0)
+			if v.fetchAgain {
+				v.fetchAgain = false
+				v.fetchNew()
+			}
+		})
+	}()
+}
+
+func (v *messagesView) showThread(thread *puush.ChatThread, first bool) {
+	if first && v.lastId == 0 {
+		// The server knows how the name is written (Lilian, not lilian)
+		v.with = thread.With
+		v.title.SetText(thread.Name)
+		v.setProfileLink(thread.With)
+		if v.visible {
+			v.ui.tray.SetOpenChat(thread.With)
+		}
+		v.thread.RemoveAll()
+		v.hint = len(thread.Messages) == 0
+		if v.hint {
+			v.thread.Add(quietLabel(i18n.T("No messages yet. Say hi!")))
+		}
+	}
+	added := false
+	for _, message := range thread.Messages {
+		if message.Id <= v.lastId {
+			continue
+		}
+		if v.hint {
+			v.hint = false
+			v.thread.RemoveAll()
+		}
+		v.lastId = message.Id
+		v.thread.Add(messageBubble(message))
+		added = true
+	}
+	if thread.CantSend != "" {
+		v.problem.SetText(thread.CantSend)
+		v.problem.Show()
+		v.entry.Disable()
+		v.send.Disable()
+	} else {
+		v.problem.Hide()
+		v.entry.Enable()
+		v.send.Enable()
+	}
+	if added || first {
+		v.thread.Refresh()
+		v.scroll.ScrollToBottom()
+		if !first {
+			v.typing.Hide()
+		}
+		v.reloadChatsSoon()
+	}
+}
+
+func (v *messagesView) showProblem(err error) {
+	var serverError *puush.ServerError
+	switch {
+	case errors.As(err, &serverError):
+		v.problem.SetText(serverError.Message)
+	case errors.Is(err, puush.ErrNotSupported):
+		v.problem.SetText(i18n.T("This server doesn't have chats yet."))
+	default:
+		v.problem.SetText(puush.FormatError(err))
+	}
+	v.problem.Show()
+}
+
+func (v *messagesView) sendMessage() {
+	text := strings.TrimSpace(v.entry.Text)
+	if text == "" || v.with == "" {
+		return
+	}
+	v.entry.SetText("")
+	v.send.Disable()
+	with, generation := v.with, v.generation
+	go func() {
+		_, err := v.ui.api.SendMessage(with, text)
+		fyne.Do(func() {
+			if generation != v.generation {
+				return
+			}
+			v.send.Enable()
+			if err != nil {
+				v.entry.SetText(text)
+				v.showProblem(err)
+				return
+			}
+			v.problem.Hide()
+			v.fetchNew()
+		})
+	}()
+}
+
+// userTyping lets the other person know, at most every few seconds.
+func (v *messagesView) userTyping() {
+	if v.with == "" || v.entry.Text == "" || time.Since(v.typingSent) < 3*time.Second {
+		return
+	}
+	v.typingSent = time.Now()
+	go v.ui.tray.Typing(v.with)
+}
+
+// onLive gets the live events, from another goroutine.
+func (v *messagesView) onLive(event *puush.LiveEvent) {
+	switch event.Type {
+	case "message":
+		var message puush.LiveMessage
+		if json.Unmarshal(event.Data, &message) != nil {
+			return
+		}
+		fyne.Do(func() {
+			if !v.visible {
+				return
+			}
+			if strings.EqualFold(message.With, v.with) {
+				v.fetchNew()
+			}
+			v.reloadChatsSoon()
+		})
+
+	case "typing":
+		var typing struct {
+			With string `json:"with"`
+		}
+		if json.Unmarshal(event.Data, &typing) != nil {
+			return
+		}
+		fyne.Do(func() {
+			if !strings.EqualFold(typing.With, v.with) {
+				return
+			}
+			v.typing.SetText(i18n.T("%s is typing…", v.title.Text))
+			v.typing.Show()
+			if v.typingTimer != nil {
+				v.typingTimer.Stop()
+			}
+			v.typingTimer = time.AfterFunc(5*time.Second, func() { fyne.Do(v.typing.Hide) })
+		})
+	}
+}
+
+// messageBubble is one message: on the right for the user's own, on the
+// left for the other person's.
+func messageBubble(message *puush.ChatMessage) fyne.CanvasObject {
+	text := widget.NewLabel(wrapText(message.Text, bubbleTextWidth))
+	text.Selectable = true
+	stamp := canvas.NewText(message.Time, quietTextColor)
+	stamp.TextSize = 10
+
+	background := canvas.NewRectangle(theirBubbleColor)
+	if message.Mine {
+		background.FillColor = myBubbleColor
+		stamp.Alignment = fyne.TextAlignTrailing
+	}
+	background.CornerRadius = 8
+	background.StrokeColor = color.NRGBA{R: 220, G: 224, B: 228, A: 255}
+	background.StrokeWidth = 1
+
+	inner := container.New(layout.NewCustomPaddedVBoxLayout(-6),
+		text,
+		container.New(layout.NewCustomPaddedLayout(0, 6, 8, 8), stamp),
+	)
+	bubble := container.NewStack(background, inner)
+	if message.Mine {
+		return container.NewHBox(layout.NewSpacer(), bubble)
+	}
+	return container.NewHBox(bubble, layout.NewSpacer())
+}
+
+func quietLabel(text string) fyne.CanvasObject {
+	label := widget.NewLabel(text)
+	label.Importance = widget.LowImportance
+	label.Alignment = fyne.TextAlignCenter
+	return label
+}
+
+// wrapText breaks text into lines that fit in width, between words where it
+// can.
+func wrapText(text string, width float32) string {
+	size := theme.TextSize()
+	fits := func(line string) bool {
+		return fyne.MeasureText(line, size, fyne.TextStyle{}).Width <= width
+	}
+	var lines []string
+	for _, paragraph := range strings.Split(text, "\n") {
+		line := ""
+		for _, word := range strings.Fields(paragraph) {
+			candidate := word
+			if line != "" {
+				candidate = line + " " + word
+			}
+			if fits(candidate) {
+				line = candidate
+				continue
+			}
+			if line != "" {
+				lines = append(lines, line)
+				line = ""
+			}
+			// A word longer than a line (like a link) is split anywhere
+			for !fits(word) {
+				runes := []rune(word)
+				cut := len(runes) - 1
+				for cut > 1 && !fits(string(runes[:cut])) {
+					cut--
+				}
+				lines = append(lines, string(runes[:cut]))
+				word = string(runes[cut:])
+			}
+			line = word
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func unreadText(n int) string {
+	if n > 99 {
+		return "99+"
+	}
+	return strconv.Itoa(n)
+}
+
+// loggedOut forgets the chats of the account that logged out.
+func (v *messagesView) loggedOut() {
+	v.generation++
+	v.with = ""
+	v.lastId = 0
+	v.thread.RemoveAll()
+	v.chatPane.Hide()
+	v.placeholder.Show()
+	v.list.UnselectAll()
+	v.loadChats()
+}

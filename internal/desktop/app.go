@@ -37,6 +37,11 @@ type UI struct {
 	refreshHome func()
 	uploads     *uploadsView
 	queue       *queueView
+	messages    *messagesView
+
+	// The account's profile and avatar, once the server told them
+	profile *puush.Profile
+	avatar  fyne.Resource
 
 	requestUpdateCheck  func(branch *updater.Branch) bool
 	updateCheckFinished func(time.Time)
@@ -77,6 +82,7 @@ func (ui *UI) Run() {
 		ui.tray.SetOpenCallback(ui.ShowAppWindow)
 		ui.tray.OnChange(ui.onTrayChange)
 		ui.tray.SetQueueCallback(ui.ShowQueueWindow)
+		ui.tray.SetMessagesCallback(ui.ShowMessagesWindow)
 		ui.tray.OnQueueChange(func() {
 			if ui.queue != nil {
 				ui.queue.refresh()
@@ -94,6 +100,7 @@ func (ui *UI) Run() {
 		go ui.tray.PerformBackgroundAuthentication()
 		go ui.tray.RefreshHistory()
 		go ui.tray.RefreshPools()
+		ui.tray.StartLive()
 
 		// Setup screenshot provider
 		providerName := ui.config.Capture.ScreenshotProvider
@@ -120,7 +127,8 @@ func (ui *UI) Quit() {
 func (ui *UI) OnShutdown() {
 	ui.tray.StopMonitor()
 	ui.tray.StopUploadQueue()
-	ui.UpdateAccountConfiguration()
+	ui.tray.StopLive()
+	ui.saveAccount()
 	ui.CloseIPCServer()
 }
 
@@ -164,7 +172,8 @@ func (ui *UI) ShowNotification(title, message string) {
 	}
 }
 
-func (ui *UI) UpdateAccountConfiguration() {
+// saveAccount copies the logged in account into the settings.
+func (ui *UI) saveAccount() {
 	if ui.api.Account.Credentials.HasApiKey() {
 		ui.config.Account.Key = *ui.api.Account.Credentials.Key
 		ui.config.Account.Username = *ui.api.Account.Credentials.Identifier
@@ -174,9 +183,21 @@ func (ui *UI) UpdateAccountConfiguration() {
 		if ui.api.Account.SubscriptionEnd != nil {
 			ui.config.Account.Expiry = ui.api.Account.SubscriptionEnd.Format(time.DateTime)
 		}
+	}
+}
+
+// UpdateAccountConfiguration saves the logged in account and loads what
+// belongs to it: uploads, pools, chats and the profile.
+func (ui *UI) UpdateAccountConfiguration() {
+	ui.saveAccount()
+	if ui.api.Account.Credentials.HasApiKey() {
 		// Both ask the server, so not on the main thread
 		go ui.tray.RefreshHistory()
 		go ui.tray.RefreshPools()
+		// Chats and comments of this account (again, after logging in)
+		ui.tray.StartLive()
+		ui.tray.RebuildMenu()
+		go ui.refreshProfile()
 	}
 }
 
@@ -184,7 +205,13 @@ func (ui *UI) UpdateAccountConfiguration() {
 func (ui *UI) Logout() {
 	ui.config.Account.Reset()
 	ui.api.Account.Reset()
+	ui.tray.StopLive()
 	ui.tray.ResetAccountState()
+	ui.profile = nil
+	ui.avatar = nil
+	if ui.messages != nil {
+		ui.messages.loggedOut()
+	}
 }
 
 func (ui *UI) UpdateAutostartConfiguration(enabled bool) {

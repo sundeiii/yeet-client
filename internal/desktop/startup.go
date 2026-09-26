@@ -78,6 +78,7 @@ func (ui *UI) ShowStartupWindow() {
 
 	var loginBtn *BorderedButton
 	var okayBtn *BorderedButton
+	var websiteBtn *BorderedButton
 
 	disableLoginElements := func() {
 		emailEntry.Disable()
@@ -98,6 +99,7 @@ func (ui *UI) ShowStartupWindow() {
 		emailLabel.Hide()
 		passwordLabel.Hide()
 		forgotLink.Hide()
+		websiteBtn.Hide()
 
 		// Enable "okay" button
 		okayBtn.Instance.Enable()
@@ -128,6 +130,12 @@ func (ui *UI) ShowStartupWindow() {
 		fyne.Do(onLoginSuccess)
 	}
 
+	websiteBtn = NewBorderedButton(i18n.T("Log in with the website"), func() {
+		ui.loginWithWebsite(onLoginSuccess)
+	})
+	websiteBtn.Move(fyne.NewPos(370, 260))
+	websiteBtn.Resize(fyne.NewSize(max(160, websiteBtn.MinSize().Width), 24))
+
 	loginBtn = NewBorderedButton(i18n.T("Login"), func() { go performLogin() })
 	loginBtn.Move(fyne.NewPos(370, 200))
 	loginBtn.Resize(fyne.NewSize(160, 55))
@@ -155,6 +163,7 @@ func (ui *UI) ShowStartupWindow() {
 		passwordEntry,
 		forgotLink,
 		loginBtn,
+		websiteBtn,
 	)
 	bgContainer := container.NewStack(bgImage, overlayContainer)
 

@@ -149,3 +149,8 @@ func formatBytes(bytes int64) string {
 	units := []string{"KB", "MB", "GB", "TB", "PB", "EB"}
 	return fmt.Sprintf("%.2f%s", float64(bytes)/float64(div), units[exp])
 }
+
+// FormatBytes writes a size for people, like "1.50GB".
+func FormatBytes(bytes int64) string {
+	return formatBytes(bytes)
+}

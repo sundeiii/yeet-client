@@ -13,6 +13,7 @@ const (
 	tabHome = iota
 	tabUploads
 	tabQueue
+	tabMessages
 	tabGeneral
 	tabKeyBindings
 	tabAccount
@@ -26,6 +27,11 @@ func (ui *UI) ShowAppWindow() {
 // ShowQueueWindow opens the app window on the upload queue.
 func (ui *UI) ShowQueueWindow() {
 	ui.showWindow(tabQueue)
+}
+
+// ShowMessagesWindow opens the app window on the chats.
+func (ui *UI) ShowMessagesWindow() {
+	ui.showWindow(tabMessages)
 }
 
 // ShowSettingsWindow opens the app window on the settings.
@@ -48,6 +54,10 @@ func (ui *UI) showWindow(tab int) {
 		ui.refreshHome = nil
 		ui.uploads = nil
 		ui.queue = nil
+		if ui.messages != nil {
+			ui.messages.close()
+			ui.messages = nil
+		}
 		ui.SetUpdateFinishedCallback(nil)
 	})
 	w.Resize(fyne.NewSize(740, 500))
@@ -61,6 +71,7 @@ func (ui *UI) showWindow(tab int) {
 	homeView, homeRefresh := ui.buildHomeTab(w, goToAccount)
 	uploadsView := ui.buildUploadsTab(w)
 	queueView := ui.buildQueueTab()
+	messagesView := ui.buildMessagesTab()
 	generalView := ui.buildGeneralTab()
 	keyBindingsView := ui.buildKeyBindingsTab()
 	advancedView := ui.buildAdvancedTab(accountViewUpdate)
@@ -71,6 +82,7 @@ func (ui *UI) showWindow(tab int) {
 		container.NewTabItem(i18n.T("Home"), homeView),
 		container.NewTabItem(i18n.T("Uploads"), uploadsView.content),
 		container.NewTabItem(i18n.T("Queue"), queueView.content),
+		container.NewTabItem(i18n.T("Messages"), messagesView.content),
 		container.NewTabItem(i18n.T("General"), generalView),
 		container.NewTabItem(i18n.T("Key Bindings"), keyBindingsView),
 		container.NewTabItem(i18n.T("Account"), accountView),
@@ -81,6 +93,11 @@ func (ui *UI) showWindow(tab int) {
 	tabs.OnSelected = func(item *container.TabItem) {
 		if item.Content == uploadsView.content {
 			uploadsView.loadIfEmpty()
+		}
+		if item.Content == messagesView.content {
+			messagesView.show()
+		} else {
+			messagesView.hide()
 		}
 	}
 	ui.windowTabs = tabs
@@ -93,10 +110,14 @@ func (ui *UI) showWindow(tab int) {
 	}
 	ui.uploads = uploadsView
 	ui.queue = queueView
+	ui.messages = messagesView
 
 	tabs.SelectIndex(tab)
 	if tab == tabUploads {
 		uploadsView.loadIfEmpty()
+	}
+	if tab == tabMessages {
+		messagesView.show()
 	}
 	w.SetContent(container.NewPadded(tabs))
 	w.Show()

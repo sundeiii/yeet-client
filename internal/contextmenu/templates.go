@@ -29,7 +29,7 @@ func newContextMenuTemplateData(executable string, iconPath string) contextMenuT
 		DesktopCommand:  desktopEntryQuote(executable) + " -upload %F",
 		Executable:      executable,
 		IconPath:        iconPath,
-		MenuLabel:       menuLabel,
+		MenuLabel:       menuLabel(),
 		OwnershipMarker: ownershipMarker,
 		MarkerEnd:       "<!-- " + ownershipMarker + " End. -->",
 		MarkerStart:     "<!-- " + ownershipMarker + " Start. -->",

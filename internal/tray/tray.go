@@ -32,6 +32,7 @@ type TrayManager struct {
 	settingsCallback func()
 	openCallback     func()
 	queueCallback    func()
+	messagesCallback func()
 
 	watcher *fsnotify.Watcher
 
@@ -54,6 +55,8 @@ type TrayManager struct {
 
 	pendingDir   string
 	countingDown atomic.Bool
+
+	live liveState
 }
 
 func NewTrayManager(cfg *config.Config, api *puush.Client) *TrayManager {
@@ -150,15 +153,20 @@ func (m *TrayManager) ShowNotification(title, message string) {
 
 // ShowUploadNotification tells the user an upload is done, with a sound and
 // a notification as the settings say. preview is a picture of the upload for
-// the notification, if there is one.
-func (m *TrayManager) ShowUploadNotification(url string, preview []byte) {
+// the notification, if there is one. duplicate says the file was uploaded
+// before, so the link is the old one.
+func (m *TrayManager) ShowUploadNotification(url string, preview []byte, duplicate bool) {
 	sound := m.config.General.Sound
 	if m.config.General.NotifySuccess {
 		icon := assets.PuushIconData
 		if m.config.General.NotifyPreview && len(preview) > 0 {
 			icon = preview
 		}
-		notification := notifications.NewNotification(i18n.T("puush complete!"), "", url).
+		title := i18n.T("puush complete!")
+		if duplicate {
+			title = i18n.T("Already uploaded, same link as before")
+		}
+		notification := notifications.NewNotification(title, "", url).
 			WithIconData(icon).
 			WithAction(url)
 		// The app plays its own sound (or none); only "system" leaves it to the system
@@ -277,6 +285,17 @@ func (m *TrayManager) rebuildMenuItems() {
 		openApp,
 		accountSettings,
 	}
+	if m.api.Account.Credentials.HasApiKey() {
+		label := i18n.T("Messages")
+		if unread := m.Unread(); unread > 0 {
+			label = i18n.T("Messages (%d unread)", unread)
+		}
+		items = append(items, fyne.NewMenuItem(label, func() {
+			if m.messagesCallback != nil {
+				m.messagesCallback()
+			}
+		}))
+	}
 
 	if name, uploading := m.ActiveUpload(); uploading {
 		items = append(items, fyne.NewMenuItem(i18n.T("Cancel Upload (%s)", escapeMenuLabel(name)), m.CancelUpload))
@@ -326,6 +345,10 @@ func (m *TrayManager) rebuildMenuItems() {
 		go m.UploadFromClipboard()
 	})
 	uploadClipboard.Icon = clipboardIcon
+	uploadText := fyne.NewMenuItem(i18n.T("Upload Text"), func() {
+		go m.UploadText()
+	})
+	uploadText.Icon = clipboardIcon
 
 	queueWindow := fyne.NewMenuItem(i18n.T("Upload Queue..."), func() {
 		if m.queueCallback != nil {
@@ -350,6 +373,7 @@ func (m *TrayManager) rebuildMenuItems() {
 		captureLastArea,
 		delayed,
 		uploadClipboard,
+		uploadText,
 		uploadFile,
 		queueWindow,
 		fyne.NewMenuItemSeparator(),

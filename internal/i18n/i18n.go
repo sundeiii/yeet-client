@@ -96,6 +96,14 @@ func T(text string, args ...any) string {
 	return text
 }
 
+// In translates text into a given language, whatever the app shows.
+func In(code, text string) string {
+	if translated, ok := catalogs[code][text]; ok && translated != "" {
+		return translated
+	}
+	return text
+}
+
 // Has tells whether the language has a translation for text.
 func Has(code, text string) bool {
 	_, ok := catalogs[code][text]

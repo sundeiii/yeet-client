@@ -7,8 +7,10 @@ import (
 	"github.com/sundeiii/yeet-client/internal/i18n"
 	"log"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/sundeiii/yeet-client/pkg/puush"
 	"golang.design/x/clipboard"
 )
 
@@ -58,4 +60,33 @@ func clipboardFiles(ctx context.Context) []string {
 		}
 	}
 	return files
+}
+
+// UploadText saves the copied text as a text file, like the website's
+// paste box, and copies its link. Servers without text snippets get it as
+// a .txt upload.
+func (m *TrayManager) UploadText() {
+	content := GetClipboard()
+	if strings.TrimSpace(content) == "" {
+		m.ShowErrorNotification(i18n.T("There's no text on your clipboard."))
+		return
+	}
+	if !m.api.Account.Credentials.HasApiKey() {
+		m.OnUploadError(puush.PuushErrorInvalidCredentials)
+		return
+	}
+
+	snippet, err := m.api.SaveSnippet(content, "", m.config.General.UploadPoolId)
+	if errors.Is(err, puush.ErrNotSupported) {
+		timestamp := time.Now().Format("2006-01-02 at 15.04.05")
+		m.enqueueJob(&uploadJob{Name: fmt.Sprintf("text (%s).txt", timestamp), Data: []byte(content)})
+		return
+	}
+	if err != nil {
+		m.OnUploadError(err)
+		return
+	}
+	m.OnTrayProgressComplete()
+	m.onLinkReady(snippet.Url, false, nil, snippet.Duplicate)
+	m.RefreshHistory()
 }

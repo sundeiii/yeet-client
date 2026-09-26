@@ -55,7 +55,7 @@ func (c *Client) uploadChunked(ctx context.Context, file io.Reader, filename str
 		}
 	}
 
-	return c.finishChunked(ctx, started.Id)
+	return c.finishChunked(ctx, started.Id, options.Duplicate)
 }
 
 // sendChunk sends one piece, trying again a few times when the connection
@@ -109,9 +109,10 @@ func (c *Client) sendChunk(ctx context.Context, id string, offset int64, piece [
 	return lastErr
 }
 
-func (c *Client) finishChunked(ctx context.Context, id string) (string, error) {
+func (c *Client) finishChunked(ctx context.Context, id string, duplicate *bool) (string, error) {
 	params := url.Values{}
 	params.Set("k", *c.Account.Credentials.Key)
+	params.Set("d", "1")
 	request, err := http.NewRequestWithContext(ctx, "POST", c.FormatURL("/api/chunk/"+url.PathEscape(id)+"/finish"), strings.NewReader(params.Encode()))
 	if err != nil {
 		return "", err
@@ -132,9 +133,12 @@ func (c *Client) finishChunked(ctx context.Context, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	link, usage, err := parseUploadResponse(scanner.Text())
+	link, usage, wasDuplicate, err := parseUploadResponse(scanner.Text())
 	if err != nil {
 		return "", err
+	}
+	if duplicate != nil {
+		*duplicate = wasDuplicate
 	}
 	c.Account.DiskUsage = usage
 	return link, nil

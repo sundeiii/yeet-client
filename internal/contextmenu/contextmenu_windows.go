@@ -43,7 +43,7 @@ func (installer windowsContextMenu) enable(executable string) error {
 	defer menu.Close()
 
 	values := map[string]string{
-		"MUIVerb":          menuLabel,
+		"MUIVerb":          menuLabel(),
 		"Icon":             windows.EscapeArg(executable) + ",0",
 		"MultiSelectModel": "Player",
 	}

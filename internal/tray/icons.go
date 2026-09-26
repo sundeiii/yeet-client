@@ -42,8 +42,24 @@ var (
 func (m *TrayManager) ResetTrayIcon() {
 	if desktopApp, ok := m.targetApp.(desktop.App); ok {
 		desktopApp.SetSystemTrayIcon(puushTrayIcon)
-		setTrayTooltip("puush")
+		setTrayTooltip(m.idleTooltip())
 	}
+}
+
+// idleTooltip is the tray's tooltip while nothing is uploading.
+func (m *TrayManager) idleTooltip() string {
+	if unread := m.Unread(); unread > 0 {
+		return i18n.T("puush: %d unread messages", unread)
+	}
+	return "puush"
+}
+
+// OnTrayIdle updates the tooltip, unless an upload is showing its progress.
+func (m *TrayManager) OnTrayIdle() {
+	if _, uploading := m.ActiveUpload(); uploading {
+		return
+	}
+	fyne.Do(func() { setTrayTooltip(m.idleTooltip()) })
 }
 
 func (m *TrayManager) ResetTrayIconSoon() {

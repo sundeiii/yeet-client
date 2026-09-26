@@ -1,6 +1,7 @@
 package puush
 
 import (
+	"errors"
 	"github.com/sundeiii/yeet-client/internal/i18n"
 	"strings"
 )
@@ -59,6 +60,10 @@ func NewPuushError(name string, value int, shouldRetry bool) PuushError {
 }
 
 func FormatError(err error) string {
+	var serverErr *ServerError
+	if errors.As(err, &serverErr) {
+		return serverErr.Message
+	}
 	puushErr, ok := err.(PuushError)
 	if !ok {
 		return i18n.T("An unexpected error occured. Please try again!")

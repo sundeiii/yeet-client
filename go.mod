@@ -6,12 +6,14 @@ require (
 	fyne.io/fyne/v2 v2.8.1
 	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4
 	github.com/Microsoft/go-winio v0.6.2
+	github.com/coder/websocket v1.8.15
 	github.com/emersion/go-autostart v0.0.0-20250403115856-34830d6457d2
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/go-github/v89 v89.0.0
 	github.com/sqweek/dialog v0.0.0-20260123140253-64c163d53aac
 	golang.design/x/clipboard v0.9.0
 	golang.design/x/mainthread v0.3.1
+	golang.org/x/image v0.45.0
 	golang.org/x/sys v0.47.0
 	gopkg.in/toast.v1 v1.0.0-20180812000517-0a84660828b2
 )
@@ -41,6 +43,7 @@ require (
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
 	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d // indirect
 	github.com/rymdport/portal v0.4.2 // indirect
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
@@ -48,7 +51,6 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.design/x/x11 v0.2.0 // indirect
 	golang.org/x/exp/shiny v0.0.0-20260824195058-e88cd73687aa // indirect
-	golang.org/x/image v0.45.0 // indirect
 	golang.org/x/mobile v0.0.0-20260821190718-4776eadac327 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/text v0.41.0 // indirect

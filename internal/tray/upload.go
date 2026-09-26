@@ -39,6 +39,9 @@ type uploadJob struct {
 	PreserveClipboard bool
 
 	Attempts int
+
+	// Duplicate: the server already had this file, so the link is the old one
+	Duplicate bool
 }
 
 func newFileJob(path string) *uploadJob {
@@ -92,7 +95,7 @@ func (m *TrayManager) runUpload(job *uploadJob) (string, error) {
 	})
 
 	progress := puush.NewProgressReader(reader, size, m.progressReporter(job, size))
-	options := puush.UploadOptions{PoolId: m.config.General.UploadPoolId, Size: size}
+	options := puush.UploadOptions{PoolId: m.config.General.UploadPoolId, Size: size, Duplicate: &job.Duplicate}
 	return m.api.UploadWithOptions(ctx, progress, job.Name, options)
 }
 
@@ -176,7 +179,7 @@ func (m *TrayManager) processBatch(jobs []*uploadJob) {
 	m.config.Account.Usage = m.api.Account.DiskUsage
 
 	if len(links) == 1 {
-		m.onLinkReady(links[0], done[0].PreserveClipboard, previewIcon(done[0]))
+		m.onLinkReady(links[0], done[0].PreserveClipboard, previewIcon(done[0]), done[0].Duplicate)
 	} else {
 		m.onLinksReady(links)
 	}
@@ -185,8 +188,8 @@ func (m *TrayManager) processBatch(jobs []*uploadJob) {
 	go m.RefreshHistory()
 }
 
-func (m *TrayManager) onLinkReady(link string, preserveClipboard bool, preview []byte) {
-	m.ShowUploadNotification(link, preview)
+func (m *TrayManager) onLinkReady(link string, preserveClipboard bool, preview []byte, duplicate bool) {
+	m.ShowUploadNotification(link, preview, duplicate)
 
 	if m.config.General.CopyToClipboard && !preserveClipboard {
 		fyne.Do(func() { fyne.CurrentApp().Clipboard().SetContent(link) })
@@ -205,7 +208,7 @@ func (m *TrayManager) onLinksReady(links []string) {
 	if m.config.General.Albums {
 		album, err := m.api.CreateAlbum(links, "")
 		if err == nil {
-			m.onLinkReady(album, false, nil)
+			m.onLinkReady(album, false, nil, false)
 			return
 		}
 		log.Printf("Could not make an album: %v", err)

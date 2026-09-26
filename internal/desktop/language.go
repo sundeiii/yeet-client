@@ -38,6 +38,10 @@ func (ui *UI) setLanguage(code string) {
 	ui.config.General.Language = code
 	i18n.SetLanguage(code)
 	ui.tray.RebuildMenu()
+	// The right-click entry is renamed too
+	if ui.config.General.ContextMenu {
+		go ui.ReconcileContextMenuConfiguration()
+	}
 
 	// The window is built with the texts of the old language
 	if ui.settingsWindow != nil {

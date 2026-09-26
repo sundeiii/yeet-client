@@ -21,13 +21,22 @@ func applyPlatform(executable string, enabled bool) error {
 	if err != nil {
 		return fmt.Errorf("find home directory: %w", err)
 	}
-	workflow := macOSContextMenu{
-		path: filepath.Join(home, "Library", "Services", menuLabel+".workflow"),
+	workflowAt := func(label string) macOSContextMenu {
+		return macOSContextMenu{path: filepath.Join(home, "Library", "Services", label+".workflow")}
+	}
+	// The Quick Action's folder is named after the label: remove the ones in
+	// other languages
+	for _, label := range allMenuLabels() {
+		if !enabled || label != menuLabel() {
+			if err := workflowAt(label).disable(); err != nil && !enabled {
+				return err
+			}
+		}
 	}
 	if enabled {
-		return workflow.enable(executable)
+		return workflowAt(menuLabel()).enable(executable)
 	}
-	return workflow.disable()
+	return nil
 }
 
 func (workflow macOSContextMenu) enable(executable string) error {

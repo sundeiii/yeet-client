@@ -18,6 +18,10 @@ type UploadOptions struct {
 
 	// Size of the file, if known. Big files are sent in pieces.
 	Size int64
+
+	// Duplicate, when set, tells whether the same file was uploaded before,
+	// so the link is the old one. Servers that don't say leave it false.
+	Duplicate *bool
 }
 
 // Upload sends a file to puush and returns the URL of the uploaded file.
@@ -69,6 +73,12 @@ func (c *Client) UploadWithOptions(ctx context.Context, file io.Reader, filename
 			return
 		}
 
+		// Ask the server to say when the file was uploaded before
+		err = writer.WriteField("d", "1")
+		if err != nil {
+			return
+		}
+
 		if options.PoolId > 0 {
 			err = writer.WriteField("p", strconv.Itoa(options.PoolId))
 			if err != nil {
@@ -103,24 +113,30 @@ func (c *Client) UploadWithOptions(ctx context.Context, file io.Reader, filename
 		return "", err
 	}
 
-	uploadUrl, updatedDiskUsage, err := parseUploadResponse(scanner.Text())
+	uploadUrl, updatedDiskUsage, duplicate, err := parseUploadResponse(scanner.Text())
 	if err != nil {
 		return "", err
+	}
+	if options.Duplicate != nil {
+		*options.Duplicate = duplicate
 	}
 
 	c.Account.DiskUsage = updatedDiskUsage
 	return uploadUrl, nil
 }
 
-func parseUploadResponse(responseLine string) (string, int64, error) {
-	responseData := strings.SplitN(responseLine, ",", 4)
+// parseUploadResponse reads "0,link,usage,usage" and, from servers that
+// say so, a fifth field that's 1 when the file was uploaded before.
+func parseUploadResponse(responseLine string) (string, int64, bool, error) {
+	responseData := strings.SplitN(responseLine, ",", 5)
 	if len(responseData) < 3 || responseData[0] != "0" || responseData[1] == "" {
-		return "", 0, errors.New("response error: malformed upload response")
+		return "", 0, false, errors.New("response error: malformed upload response")
 	}
 
 	updatedDiskUsage, err := strconv.ParseInt(responseData[2], 10, 64)
 	if err != nil {
-		return "", 0, errors.New("response error: invalid disk usage provided")
+		return "", 0, false, errors.New("response error: invalid disk usage provided")
 	}
-	return responseData[1], updatedDiskUsage, nil
+	duplicate := len(responseData) == 5 && strings.TrimSpace(responseData[4]) == "1"
+	return responseData[1], updatedDiskUsage, duplicate, nil
 }
