@@ -43,12 +43,16 @@ func (ui *UI) setLanguage(code string) {
 		go ui.ReconcileContextMenuConfiguration()
 	}
 
-	// The window is built with the texts of the old language
-	if ui.settingsWindow != nil {
-		ui.settingsWindow.Close()
-		ui.showWindow(tabSettings)
-	} else if ui.startupWindow != nil {
-		ui.startupWindow.Close()
-		ui.ShowStartupWindow()
+	// The window is rebuilt with the new texts, where it is
+	if w := ui.settingsWindow; w != nil {
+		if ui.messages != nil {
+			ui.messages.close()
+		}
+		ui.SetUpdateFinishedCallback(nil)
+		ui.fillWindow(w, tabSettings)
+		ui.settingsTabs.SelectIndex(settingsGeneral)
+	} else if w := ui.startupWindow; w != nil {
+		w.SetTitle(i18n.T("puush quick start"))
+		ui.fillStartupWindow(w)
 	}
 }

@@ -31,7 +31,14 @@ func (ui *UI) ShowStartupWindow() {
 	w.SetFixedSize(true)
 	w.SetIcon(puushIcon)
 	ui.startupWindow = w
+	ui.fillStartupWindow(w)
+	w.Resize(fyne.NewSize(640, 540))
+	w.Show()
+}
 
+// fillStartupWindow builds the quick start's contents, in the current
+// language.
+func (ui *UI) fillStartupWindow(w fyne.Window) {
 	serverUrl := ui.config.Misc.ParseServerURL()
 	registerUrl := serverUrl.String() + "/register"
 	resetUrl := serverUrl.String() + "/reset_password"
@@ -195,8 +202,6 @@ func (ui *UI) ShowStartupWindow() {
 		container.NewPadded(bottomBar),
 	)
 	w.SetContent(mainContent)
-	w.Resize(fyne.NewSize(640, 540))
-	w.Show()
 }
 
 func showError(err error) {

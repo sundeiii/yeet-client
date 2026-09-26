@@ -106,6 +106,57 @@ func (ui *UI) showWindow(tab int) {
 	w.SetIcon(puushIcon)
 	ui.settingsWindow = w
 
+	ui.fillWindow(w, tab)
+	w.Show()
+
+	// Fresh account details, e.g. the disk usage after uploading on the website
+	go ui.refreshAccount()
+}
+
+// onTrayChange runs when uploads, failed uploads or pools change.
+func (ui *UI) onTrayChange() {
+	if ui.refreshHome != nil {
+		ui.refreshHome()
+	}
+	if ui.uploads != nil {
+		ui.uploads.reloadSoon()
+	}
+}
+
+// refreshAccount asks the server for the account's details again.
+func (ui *UI) refreshAccount() {
+	if !ui.api.Account.Credentials.HasApiKey() {
+		return
+	}
+	if err := ui.api.Authenticate(); err != nil {
+		return
+	}
+	ui.UpdateAccountConfiguration()
+	fyne.Do(func() {
+		if ui.refreshHome != nil {
+			ui.refreshHome()
+		}
+	})
+}
+
+func createGroup(title string, content fyne.CanvasObject) fyne.CanvasObject {
+	indentedContent := container.NewBorder(nil, nil, widget.NewLabel("    "), widget.NewLabel("    "), content)
+	return widget.NewCard("", title, indentedContent)
+}
+
+func createGroupNoIndent(title string, content fyne.CanvasObject) fyne.CanvasObject {
+	return widget.NewCard("", title, content)
+}
+
+func trailingLabel(text string) *widget.Label {
+	label := widget.NewLabel(text)
+	label.Alignment = fyne.TextAlignTrailing
+	return label
+}
+
+// fillWindow builds the app window's tabs, in the current language, and
+// shows the given one.
+func (ui *UI) fillWindow(w fyne.Window, tab int) {
 	var tabs, settingsTabs *container.AppTabs
 	goToAccount := func() {
 		tabs.SelectIndex(tabSettings)
@@ -173,49 +224,4 @@ func (ui *UI) showWindow(tab int) {
 		messagesView.show()
 	}
 	w.SetContent(container.NewPadded(tabs))
-	w.Show()
-
-	// Fresh account details, e.g. the disk usage after uploading on the website
-	go ui.refreshAccount()
-}
-
-// onTrayChange runs when uploads, failed uploads or pools change.
-func (ui *UI) onTrayChange() {
-	if ui.refreshHome != nil {
-		ui.refreshHome()
-	}
-	if ui.uploads != nil {
-		ui.uploads.reloadSoon()
-	}
-}
-
-// refreshAccount asks the server for the account's details again.
-func (ui *UI) refreshAccount() {
-	if !ui.api.Account.Credentials.HasApiKey() {
-		return
-	}
-	if err := ui.api.Authenticate(); err != nil {
-		return
-	}
-	ui.UpdateAccountConfiguration()
-	fyne.Do(func() {
-		if ui.refreshHome != nil {
-			ui.refreshHome()
-		}
-	})
-}
-
-func createGroup(title string, content fyne.CanvasObject) fyne.CanvasObject {
-	indentedContent := container.NewBorder(nil, nil, widget.NewLabel("    "), widget.NewLabel("    "), content)
-	return widget.NewCard("", title, indentedContent)
-}
-
-func createGroupNoIndent(title string, content fyne.CanvasObject) fyne.CanvasObject {
-	return widget.NewCard("", title, content)
-}
-
-func trailingLabel(text string) *widget.Label {
-	label := widget.NewLabel(text)
-	label.Alignment = fyne.TextAlignTrailing
-	return label
 }

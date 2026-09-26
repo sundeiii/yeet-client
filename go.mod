@@ -10,12 +10,12 @@ require (
 	github.com/emersion/go-autostart v0.0.0-20250403115856-34830d6457d2
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/go-github/v89 v89.0.0
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/sqweek/dialog v0.0.0-20260123140253-64c163d53aac
 	golang.design/x/clipboard v0.9.0
 	golang.design/x/mainthread v0.3.1
 	golang.org/x/image v0.45.0
 	golang.org/x/sys v0.47.0
-	gopkg.in/toast.v1 v1.0.0-20180812000517-0a84660828b2
 )
 
 require (
@@ -41,9 +41,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.28 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
-	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d // indirect
 	github.com/rymdport/portal v0.4.2 // indirect
-	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/stretchr/testify v1.12.1 // indirect

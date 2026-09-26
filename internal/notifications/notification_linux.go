@@ -22,13 +22,13 @@ func (n *Notification) Push() error {
 
 func notification(appName string, title string, text string, iconPath string, actionUrl string) {
 	if actionUrl == "" {
-		cmd := exec.Command("notify-send", "-a", appName, "-i", iconPath, title, text)
+		cmd := exec.Command("notify-send", "-a", appName, "-i", iconPath, "--", title, text)
 		cmd.Run()
 		return
 	}
 
 	go func() {
-		cmd := exec.Command("notify-send", "-a", appName, "-i", iconPath, "--action=open=Open", title, "--expire-time=5000", text)
+		cmd := exec.Command("notify-send", "-a", appName, "-i", iconPath, "--action=open=Open", "--expire-time=5000", "--", title, text)
 		out, err := cmd.Output()
 		if err != nil {
 			return

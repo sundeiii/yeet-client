@@ -89,6 +89,17 @@ func (l *LiveConnection) Typing(ctx context.Context, to string) error {
 	return l.conn.Write(ctx, websocket.MessageText, data)
 }
 
+// Ping checks that the server still answers. A connection can die without
+// either side noticing, e.g. when the computer sleeps or changes networks.
+func (l *LiveConnection) Ping(ctx context.Context) error {
+	return l.conn.Ping(ctx)
+}
+
+// CloseNow drops the connection without waiting for the server.
+func (l *LiveConnection) CloseNow() error {
+	return l.conn.CloseNow()
+}
+
 // Close closes the connection.
 func (l *LiveConnection) Close() error {
 	return l.conn.Close(websocket.StatusNormalClosure, "")

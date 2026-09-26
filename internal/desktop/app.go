@@ -65,6 +65,10 @@ func (ui *UI) Run() {
 	// TODO: Maybe add some sort of theme customization?
 	ui.app.Settings().SetTheme(NewWindowsTheme())
 
+	// Chat messages pop up unless their chat is on screen in front
+	ui.app.Lifecycle().SetOnEnteredForeground(func() { ui.tray.SetAppFocused(true) })
+	ui.app.Lifecycle().SetOnExitedForeground(func() { ui.tray.SetAppFocused(false) })
+
 	// Update autostart configuration based on current settings
 	ui.UpdateAutostartConfiguration(ui.config.General.Startup)
 	ui.ReconcileContextMenuConfiguration()

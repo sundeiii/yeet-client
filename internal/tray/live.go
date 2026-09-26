@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ type liveState struct {
 	conn      *puush.LiveConnection
 	unread    int
 	openChat  string // the chat the app window shows, if any
+	focused   bool   // the app window is in front
 	listeners map[int]func(*puush.LiveEvent)
 	nextId    int
 }
@@ -110,6 +112,29 @@ func (m *TrayManager) setLiveConnection(conn *puush.LiveConnection) {
 }
 
 func (m *TrayManager) readLive(ctx context.Context, conn *puush.LiveConnection) error {
+	// A dead connection (after sleep, or a new network) would otherwise
+	// wait for messages forever; dropping it makes runLive connect again
+	pingCtx, stopPing := context.WithCancel(ctx)
+	defer stopPing()
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pingCtx.Done():
+				return
+			case <-ticker.C:
+			}
+			timeout, done := context.WithTimeout(pingCtx, 15*time.Second)
+			err := conn.Ping(timeout)
+			done()
+			if err != nil && pingCtx.Err() == nil {
+				log.Printf("Live connection stopped answering: %v", err)
+				conn.CloseNow()
+				return
+			}
+		}
+	}()
 	for {
 		event, err := conn.Next(ctx)
 		if err != nil {
@@ -138,7 +163,8 @@ func (m *TrayManager) handleLive(event *puush.LiveEvent) {
 			break
 		}
 		m.live.mu.Lock()
-		open := m.live.openChat == message.With
+		// Only when it's really on screen; a minimized window doesn't count
+		open := m.live.focused && strings.EqualFold(m.live.openChat, message.With)
 		m.live.mu.Unlock()
 		if !open {
 			m.setUnread(message.Unread)
@@ -220,6 +246,13 @@ func (m *TrayManager) Unread() int {
 func (m *TrayManager) SetOpenChat(name string) {
 	m.live.mu.Lock()
 	m.live.openChat = name
+	m.live.mu.Unlock()
+}
+
+// SetAppFocused tells whether the app window is in front.
+func (m *TrayManager) SetAppFocused(focused bool) {
+	m.live.mu.Lock()
+	m.live.focused = focused
 	m.live.mu.Unlock()
 }
 
