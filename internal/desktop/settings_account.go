@@ -188,7 +188,7 @@ func (ui *UI) profileHeader() fyne.CanvasObject {
 		hint.Importance = widget.LowImportance
 		link = hint
 	}
-	text := container.New(layout.NewCustomPaddedVBoxLayout(-10), name, link)
+	text := container.New(layout.NewCustomPaddedVBoxLayout(-4), name, link)
 	return container.NewHBox(container.NewPadded(avatar), container.NewCenter(text))
 }
 

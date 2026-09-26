@@ -137,7 +137,6 @@ func (ui *UI) buildMessagesTab() *messagesView {
 
 	// Right: the open chat
 	v.title = widget.NewLabel("")
-	v.title.Truncation = fyne.TextTruncateEllipsis
 	v.profile = widget.NewHyperlink(i18n.T("Profile"), nil)
 	v.presence = canvas.NewText("", quietTextColor)
 	v.presence.TextSize = 11
@@ -167,8 +166,8 @@ func (ui *UI) buildMessagesTab() *messagesView {
 	v.composeBar = container.NewBorder(nil, nil, composeLine, cancelCompose, v.compose)
 	v.composeBar.Hide()
 
-	titles := container.New(layout.NewCustomPaddedVBoxLayout(-10), v.title,
-		container.New(layout.NewCustomPaddedLayout(0, 6, 8, 8), v.presence))
+	// The name, and on the same line whether they're online
+	titles := container.NewHBox(v.title, container.NewCenter(v.presence))
 	header := container.NewBorder(nil, widget.NewSeparator(), nil, v.profile, titles)
 	footer := container.NewVBox(v.typing, v.problem, v.composeBar, container.NewBorder(nil, nil, v.attach, v.send, v.entry))
 	v.chatPane = container.NewBorder(header, footer, nil, nil, v.scroll)
@@ -248,7 +247,7 @@ func (v *messagesView) createChatRow() fyne.CanvasObject {
 }
 
 func (row *chatRow) CreateRenderer() fyne.WidgetRenderer {
-	text := container.New(layout.NewCustomPaddedVBoxLayout(-12), row.name, row.preview)
+	text := container.New(layout.NewCustomPaddedVBoxLayout(-6), row.name, row.preview)
 	// The green dot of people online sits on the avatar's corner
 	corner := container.NewVBox(layout.NewSpacer(), container.NewHBox(layout.NewSpacer(), row.online))
 	avatar := container.NewCenter(container.NewStack(row.avatar, corner))
@@ -792,7 +791,7 @@ func (v *messagesView) messageBubble(message *puush.ChatMessage) fyne.CanvasObje
 	background.StrokeWidth = 1
 
 	parts = append(parts, container.New(layout.NewCustomPaddedLayout(0, 6, 8, 8), stamp))
-	inner := container.New(layout.NewCustomPaddedVBoxLayout(-6), parts...)
+	inner := container.New(layout.NewCustomPaddedVBoxLayout(-4), parts...)
 	bubble := container.NewStack(background, inner)
 	if message.Mine {
 		return container.NewHBox(layout.NewSpacer(), bubble)
@@ -838,7 +837,7 @@ func (v *messagesView) fileCard(file *puush.ChatFile) fyne.CanvasObject {
 		}()
 	}
 
-	details := container.New(layout.NewCustomPaddedVBoxLayout(-8), name, container.New(layout.NewCustomPaddedLayout(0, 0, 8, 8), size))
+	details := container.New(layout.NewCustomPaddedVBoxLayout(-2), name, container.New(layout.NewCustomPaddedLayout(0, 0, 8, 8), size))
 	if file.Kind == "image" || file.Kind == "video" {
 		return container.NewVBox(container.NewPadded(preview), details)
 	}
