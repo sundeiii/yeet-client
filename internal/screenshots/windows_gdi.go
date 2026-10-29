@@ -23,39 +23,19 @@ func captureScreenRect(x, y, width, height int) (*image.NRGBA, error) {
 	}
 	defer releaseDC(0, screenDC)
 
-	memDC, err := createCompatibleDC(screenDC)
-	if err != nil {
-		return nil, err
-	}
-	defer deleteDC(memDC)
-
-	bitmap, err := createCompatibleBitmap(screenDC, width, height)
-	if err != nil {
-		return nil, err
-	}
-	defer deleteObject(bitmap)
-
-	oldObj, err := selectObject(memDC, bitmap)
-	if err != nil {
-		return nil, err
-	}
-	defer selectObject(memDC, oldObj)
-
-	if err := bitBlt(
-		memDC,
-		0,
-		0,
-		width,
-		height,
-		screenDC,
-		x,
-		y,
-		srccopy|captureBlt,
-	); err != nil {
-		return nil, err
-	}
-
-	return bitmapToNRGBA(screenDC, bitmap, width, height)
+	return drawToImage(screenDC, width, height, func(memDC uintptr) error {
+		return bitBlt(
+			memDC,
+			0,
+			0,
+			width,
+			height,
+			screenDC,
+			x,
+			y,
+			srccopy|captureBlt,
+		)
+	})
 }
 
 func captureWindow(hwnd uintptr) (*image.NRGBA, error) {
@@ -81,13 +61,36 @@ func captureWindow(hwnd uintptr) (*image.NRGBA, error) {
 	}
 	defer releaseDC(hwnd, windowDC)
 
-	memDC, err := createCompatibleDC(windowDC)
+	return drawToImage(windowDC, width, height, func(memDC uintptr) error {
+		if printWindow(hwnd, memDC, pwRenderFullContent) {
+			return nil
+		}
+		return bitBlt(
+			memDC,
+			0,
+			0,
+			width,
+			height,
+			windowDC,
+			0,
+			0,
+			srccopy|captureBlt,
+		)
+	})
+}
+
+// drawToImage lets draw paint into a DIB section and copies its pixels out.
+// GetDIBits on a screen-compatible bitmap fails for full-screen sizes with
+// some display drivers (e.g. NVIDIA next to the Parsec virtual display), a
+// DIB section hands its pixels over directly.
+func drawToImage(hdc uintptr, width, height int, draw func(memDC uintptr) error) (*image.NRGBA, error) {
+	memDC, err := createCompatibleDC(hdc)
 	if err != nil {
 		return nil, err
 	}
 	defer deleteDC(memDC)
 
-	bitmap, err := createCompatibleBitmap(windowDC, width, height)
+	bitmap, pixels, err := createDIBSection(hdc, width, height)
 	if err != nil {
 		return nil, err
 	}
@@ -99,23 +102,21 @@ func captureWindow(hwnd uintptr) (*image.NRGBA, error) {
 	}
 	defer selectObject(memDC, oldObj)
 
-	if !printWindow(hwnd, memDC, pwRenderFullContent) {
-		if err := bitBlt(
-			memDC,
-			0,
-			0,
-			width,
-			height,
-			windowDC,
-			0,
-			0,
-			srccopy|captureBlt,
-		); err != nil {
-			return nil, err
-		}
+	if err := draw(memDC); err != nil {
+		return nil, err
+	}
+	procGdiFlush.Call()
+
+	// Windows DIBs are BGRA, swap Blue and Red and make Alpha fully opaque
+	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for i := 0; i < len(img.Pix); i += 4 {
+		img.Pix[i] = pixels[i+2]
+		img.Pix[i+1] = pixels[i+1]
+		img.Pix[i+2] = pixels[i]
+		img.Pix[i+3] = 0xff
 	}
 
-	return bitmapToNRGBA(windowDC, bitmap, width, height)
+	return img, nil
 }
 
 func bitmapToNRGBA(hdc uintptr, bitmap uintptr, width, height int) (*image.NRGBA, error) {
